@@ -6,7 +6,7 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.3.0";
+var VERSION = "1.4.0";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -131,6 +131,94 @@ function httpGet(url, header){
 function parseBody(res){
   if (!res || !res.body) return null;
   try { return JSON.parse(res.body); } catch(e) { return null; }
+}
+
+function getFhirKey(){ return (localStorage.getItem("fhirKey")||"").trim(); }
+function fhirGet(path){
+  return httpGet("https://gateway.api.esante.gouv.fr/fhir/v2/"+path, "ESANTE-API-KEY:"+getFhirKey());
+}
+function flattenObj(obj, prefix){
+  var rows=[];
+  function walk(o, p){
+    if (o==null || o==="") return;
+    if (Array.isArray(o)) { o.forEach(function(x,i){ walk(x, p+"["+i+"]"); }); return; }
+    if (typeof o==="object") {
+      Object.keys(o).forEach(function(k){
+        if (k==="text" || k==="meta" || k==="div") return;
+        walk(o[k], p?p+"."+k:k);
+      });
+      return;
+    }
+    var s=String(o);
+    if (s.indexOf("data:image")===0 || s.length>220) s=s.slice(0,80)+"…";
+    rows.push([p,s]);
+  }
+  walk(obj, prefix||"");
+  return rows;
+}
+function sourceBox(title, rows, note){
+  var body = !rows||!rows.length ? '<p class="muted">'+(note||"Aucune donnée renvoyée par cette source.")+'</p>' :
+    rows.map(function(r){ return '<div class="kv"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>'; }).join("");
+  return '<div class="card srcbox"><b>'+title+'</b>'+body+'</div>';
+}
+function enrichOne(p){
+  if (!getFhirKey() || !p.rpps) {
+    p.fhirNote = getFhirKey() ? "Pas de n° RPPS pour interroger FHIR." : "Clé FHIR absente — collez-la dans Sources & API.";
+    return Promise.resolve(p);
+  }
+  var q="Practitioner?identifier="+encodeURIComponent(p.rpps)+"&_revinclude=PractitionerRole:practitioner&_count=8";
+  return fhirGet(q).then(function(res){
+    p.fhirStatus=res&&res.status;
+    p.fhirOk=!!(res&&res.ok);
+    p.fhirRaw=[];
+    var bundle=parseBody(res);
+    if (!p.fhirOk || !bundle) {
+      p.fhirNote="HTTP "+(p.fhirStatus||"?")+" — "+String((res&&res.body)||"").slice(0,160);
+      return p;
+    }
+    var entries=(bundle.entry||[]).map(function(e){ return e.resource; }).filter(Boolean);
+    if (!entries.length) p.fhirNote="Clé OK mais aucun Practitioner pour ce RPPS.";
+    entries.forEach(function(r){
+      p.fhirRaw=p.fhirRaw.concat(flattenObj(r, r.resourceType||"FHIR"));
+      if (r.resourceType==="Practitioner") {
+        if (r.birthDate) {
+          p.birthDate=r.birthDate;
+          p.age=new Date().getFullYear()-parseInt(String(r.birthDate).slice(0,4),10);
+        }
+        if (r.gender) p.gender=r.gender;
+        if (r.photo && r.photo[0]) {
+          var ph=r.photo[0];
+          p.photo=ph.url||(ph.data?("data:"+(ph.contentType||"image/jpeg")+";base64,"+ph.data):"");
+        }
+        (r.qualification||[]).forEach(function(q){
+          var d=q.code && ((q.code.text)||(q.code.coding&&q.code.coding[0]&&(q.code.coding[0].display||q.code.coding[0].code)));
+          if (d && p.diplomes.indexOf(d)<0) p.diplomes.push(d);
+        });
+        (r.telecom||[]).forEach(function(t){
+          if (t.system==="phone" && t.value && !p.tel) p.tel=t.value;
+          if (t.system==="email" && t.value && !p.email) p.email=t.value;
+        });
+      }
+      if (r.resourceType==="PractitionerRole") {
+        (r.telecom||[]).forEach(function(t){
+          if (t.system==="phone" && t.value && !p.tel) p.tel=t.value;
+          if (t.system==="email" && t.value && !p.email) p.email=t.value;
+        });
+      }
+    });
+    if (p.fhirOk && (p.src||"").indexOf("FHIR")<0) p.src+=" + FHIR v2";
+    p.sc=scoreOf(p);
+    return p;
+  });
+}
+function enrichFhir(list){
+  if (!getFhirKey()) return Promise.resolve(list);
+  var i=0;
+  function step(){
+    if (i>=list.length) return Promise.resolve(list);
+    return enrichOne(list[i]).then(function(){ i++; return step(); });
+  }
+  return step();
 }
 
 function scoreOf(p){
@@ -281,10 +369,13 @@ function cardMini(p){
 function ficheV(){
   var p=S.current; if(!p) return '<button type="button" class="back" data-act="home">Retour</button>';
   var s=p.sc||scoreOf(p);
-  var tabs=[["synthese","Synthèse"],["fiab","Fiabilité"],["acces","Accès"],["info","Informations"]];
+  var tabs=[["synthese","Synthèse"],["fiab","Fiabilité"],["acces","Accès"],["info","Sources"]];
   var body="";
+  var ageLine = p.age ? ('Âge publié : environ '+p.age+' ans (naissance '+esc(p.birthDate)+')') : 'Âge : non publié. La date de naissance est une donnée restreinte ANS, absente de l’open data et en général de FHIR public.';
+  var photoBlock = p.photo ? '<img class="photo" src="'+esc(p.photo)+'" alt="photo"/>' : '<p class="muted">Photo : aucune image n’est publiée dans l’Annuaire public. L’API FHIR le permet en théorie (Practitioner.photo), l’ANS ne la verse presque jamais.</p>';
   if (S.detailTab==="synthese") {
-    body = '<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100 ✓</b><span>Pertinence besoin · '+lecture(s.besoin)+'</span></div>'+
+    body = photoBlock+'<p class="muted">'+ageLine+'</p>'+
+      '<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100 ✓</b><span>Pertinence besoin · '+lecture(s.besoin)+'</span></div>'+
       '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Fiabilité · '+lecture(s.fiab)+'</span></div>'+
       '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Confiance dans les données</span></div></div>'+
       whyBox(s)+
@@ -293,23 +384,29 @@ function ficheV(){
         (p.hasDate?'<div class="fav">✓ Accréditation HAS '+esc(p.hasDate)+'</div>':'')+
         (p.rpps?'<div class="fav">✓ RPPS '+esc(p.rpps)+'</div>':'')+
         (p.tel?'<div class="fav">✓ Téléphone public</div>':'')+
+        (p.fhirOk?'<div class="fav">✓ Fiche enrichie FHIR v2</div>':'')+
         '<div class="fav">✓ Source administrative ouverte</div></div>'+
       '<div class="card"><b class="vig">Points de vigilance</b>'+
         (!p.hasDate?'<div class="vig">⚠ Accréditation HAS non listée</div>':'')+
         (!p.tel?'<div class="vig">⚠ Téléphone non publié</div>':'')+
+        (!p.age?'<div class="vig">⚠ Âge non publié (donnée restreinte)</div>':'')+
         '<div class="vig">⚠ Pas un taux de réussite clinique</div></div></div>';
   } else if (S.detailTab==="fiab") {
     var rows=[["Diplômes / formation",p.noteDip],["Certification HAS",p.noteCert],["Avis patients (signal faible)",p.noteAvis],["Rôle / exercice",p.noteReco],["Complétude des sources",Math.round(s.data/10)]];
     body = rows.map(function(r){return '<div class="card"><div class="row"><b>'+r[0]+'</b><span>'+r[1]+'/10</span></div><div class="bar"><i style="width:'+(r[1]*10)+'%"></i></div></div>';}).join("");
+    if (p.diplomes && p.diplomes.length) body += '<div class="card"><b>Qualifications FHIR</b><p>'+p.diplomes.map(esc).join("<br>")+'</p></div>';
   } else if (S.detailTab==="acces") {
-    body = '<div class="card"><p><b>Ville</b> '+esc(p.ville)+'</p><p><b>Adresse</b> '+esc(p.adresse||"Non publiée")+'</p><p><b>Téléphone</b> '+esc(p.tel||"Non publié")+'</p><p><b>E-mail</b> '+esc(p.email||"Non publié")+'</p><p><b>Mode</b> '+esc(p.mode||"—")+'</p></div>';
+    body = '<div class="card"><p><b>Téléphone</b> '+esc(p.tel||"non publié")+'</p><p><b>E-mail</b> '+esc(p.email||"non publié")+'</p><p><b>Adresse</b> '+esc(p.adresse||p.ville||"—")+'</p><p><b>Structure</b> '+esc(p.structure||"—")+'</p></div>';
   } else {
-    body = '<div class="card"><p><b>RPPS</b> '+esc(p.rpps||"—")+'</p><p><b>Sources</b> '+esc(p.src)+'</p><p><b>FINESS</b> '+esc(p.finess||"—")+'</p><p><b>Structure</b> '+esc(p.structure||"—")+'</p></div>';
+    body = sourceBox("Géo — geo.api.gouv.fr", [["Ville",S.ville],["Code commune",S.code],["Département",S.dept],["Latitude",S.lat],["Longitude",S.lon]])+
+      sourceBox("RPPS — tabular-api.data.gouv.fr", flattenObj(p.rawRpps), p.rawRpps?"":"Pas de ligne RPPS pour ce praticien.")+
+      sourceBox("HAS — médecins accrédités", flattenObj(p.rawHas), p.rawHas?"":"Pas d’accréditation HAS listée pour ce RPPS.")+
+      sourceBox("FHIR v2 — gateway.api.esante.gouv.fr", p.fhirRaw, p.fhirNote||(getFhirKey()?"":"Collez la clé ANS pour interroger Practitioner + PractitionerRole."));
   }
-  return '<button type="button" class="back" data-act="results">Retour</button><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="muted">'+esc(p.sous||"")+' · '+esc(p.ville||"")+'</p>'+
+  return '<button type="button" class="back" data-act="results">Retour</button><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="muted">'+esc(p.sous||"")+' · '+esc(p.ville||"")+' · v'+VERSION+'</p>'+
     '<div class="tabs">'+tabs.map(function(t){return '<a href="#" class="'+(S.detailTab===t[0]?"on":"")+'" data-act="dtab" data-id="'+t[0]+'">'+t[1]+'</a>';}).join("")+'</div>'+body+
     '<div class="actions"><button type="button" class="btn ghost" data-act="call">Appeler</button><button type="button" class="btn ghost" data-act="mail">E-mail</button><button type="button" class="btn primary" data-act="maps">Itinéraire</button><button type="button" class="btn ghost" data-act="share">Partager</button></div>'+
-    '<p class="disclaimer">Cette application aide à s’orienter vers un type de spécialiste et à comparer des profils. Elle ne pose aucun diagnostic. Urgence : 15.</p>';
+    '<p class="disclaimer">Cette application aide à s’orienter. Elle ne pose aucun diagnostic. Urgence : 15 · 18 · 17 · 112 · SMS 114.</p>';
 }
 function synth(){
   if (!S.lastSearch) return '<div class="card"><h2>Pas encore de synthèse</h2><button type="button" class="btn primary" data-act="home">Accueil</button></div>';
@@ -389,7 +486,8 @@ function mapRpps(r){
     communeExact: fold(ville)===fold(S.ville) || (S.code && String(r["Code commune (coord. structure)"]||"")===String(S.code)),
     annee:null, diplomes:[], hasDate:"", oa:"",
     noteDip:7, noteCert:4, noteAvis:5, noteReco:6, noteConf:5,
-    mode:mode, rpps:rpps, src:"RPPS open data", sites:1, secteur:r["Libellé secteur d'activité"]||""
+    mode:mode, rpps:rpps, src:"RPPS open data", sites:1, secteur:r["Libellé secteur d'activité"]||"",
+    rawRpps:r, rawHas:null, fhirRaw:[], birthDate:"", age:null, photo:"", gender:""
   };
 }
 function mapHas(r){
@@ -402,7 +500,8 @@ function mapHas(r){
     tel:"", email:"", adresse:"", structure:"", finess:r.FINESS||"",
     annee:null, diplomes:[], hasDate:r["Date accréditation"]||"", oa:r.OA||"",
     noteDip:7, noteCert:9, noteAvis:5, noteReco:7, noteConf:5,
-    mode:r.Statut||"", rpps:rpps, src:"HAS open data", sites:1, communeExact:false
+    mode:r.Statut||"", rpps:rpps, src:"HAS open data", sites:1, communeExact:false,
+    rawRpps:null, rawHas:r, fhirRaw:[], birthDate:"", age:null, photo:"", gender:""
   };
 }
 
@@ -442,6 +541,8 @@ function runSearch(){
         if (p.adresse && !by[k].adresse) by[k].adresse=p.adresse;
         if (p.structure && !by[k].structure) by[k].structure=p.structure;
         if (p.communeExact) { by[k].communeExact=true; by[k].ville=p.ville; }
+        if (p.rawRpps) by[k].rawRpps = p.rawRpps;
+        if (p.rawHas) by[k].rawHas = p.rawHas;
         if (p.sous && (!by[k].sous || by[k].sous.length<p.sous.length)) by[k].sous=p.sous;
         by[k].src = Array.from(new Set((by[k].src+","+p.src).split(","))).join(" + ");
       }
@@ -453,13 +554,19 @@ function runSearch(){
     });
     var list=Object.keys(by).map(function(k){ var p=by[k]; p.sc=scoreOf(p); return p; });
     list.sort(function(a,b){ return b.sc.besoin-a.sc.besoin || (b.sc.data-a.sc.data); });
-    S.results=list.slice(0,40);
+    list=list.slice(0,40);
     S.srcNote=(parts||[]).map(function(p){return p.kind.toUpperCase()+" "+((parseBody(p.res)||{}).meta||{}).total;}).join(" · ");
-    if (!S.results.length) S.srcNote="aucune ligne pour cette commune / spécialité";
+    if (!list.length) S.srcNote="aucune ligne pour cette commune / spécialité";
+    S.results=list;
     S.lastSearch={label:(SPEC[S.spec]||"")+" · "+S.ville+" · "+S.rayon+" km", spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()};
     S.history.unshift({type:"RECHERCHE", label:S.lastSearch.label, spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()});
     persist();
-    S.busy=false; render();
+    render();
+    return enrichFhir(list).then(function(done){
+      S.results=done;
+      if (getFhirKey()) S.srcNote=(S.srcNote?S.srcNote+" · ":"")+"FHIR "+done.filter(function(p){return p.fhirOk;}).length+"/"+done.length;
+      S.busy=false; persist(); render();
+    });
   }).catch(function(e){
     S.busy=false; S.srcNote="erreur "+(e&&e.message?e.message:e); render();
   });
@@ -512,7 +619,13 @@ function bindFields(){
   var r=document.getElementById("rayon"); if (r) r.addEventListener("change", function(){ S.rayon=+this.value; });
   var t=document.getElementById("symtxt"); if (t) t.addEventListener("input", function(){ S.q.texte=this.value; });
   var d=document.getElementById("duree"); if (d) d.addEventListener("change", function(){ S.q.duree=this.value; });
-  var k=document.getElementById("fhirKey"); if (k) k.addEventListener("change", function(){ localStorage.setItem("fhirKey", this.value.trim()); });
+  var k=document.getElementById("fhirKey");
+  if (k) {
+    var save=function(){ localStorage.setItem("fhirKey", k.value.trim()); };
+    k.addEventListener("change", save);
+    k.addEventListener("blur", save);
+    k.addEventListener("input", save);
+  }
   var ranges=document.querySelectorAll("[data-poids]");
   for (var i=0;i<ranges.length;i++){
     ranges[i].addEventListener("input", function(){

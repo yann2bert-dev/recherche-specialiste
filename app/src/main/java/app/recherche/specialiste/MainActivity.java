@@ -107,8 +107,8 @@ public class MainActivity extends Activity {
                 c.setReadTimeout(20000);
                 c.setRequestMethod("GET");
                 c.setInstanceFollowRedirects(true);
-                c.setRequestProperty("Accept", "application/json,text/plain,*/*");
-                c.setRequestProperty("User-Agent", "RechercheSpecialiste/1.1 (Android; BY Innovation)");
+                c.setRequestProperty("Accept", "application/fhir+json,application/json,text/plain,*/*");
+                c.setRequestProperty("User-Agent", "RechercheSpecialiste/1.4.0 (Android; BY Innovation)");
                 if (headerLine != null && headerLine.contains(":")) {
                     int i = headerLine.indexOf(':');
                     c.setRequestProperty(headerLine.substring(0, i).trim(), headerLine.substring(i + 1).trim());
