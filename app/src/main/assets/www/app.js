@@ -1,13 +1,13 @@
 window.S = {
   tab:"home", screen:"home", ville:"", code:"", dept:"", lat:null, lon:null, rayon:25,
-  poids:{F:35,A:10,P:15,E:40},
+  poids:{F:15,A:10,P:20,E:55},
   sort:"qualite", filtres:{has:false, tel:false, liberal:false, hopital:false},
   q:{zone:"",type:"",duree:"jours",alertes:[],texte:""},
   suggestions:[], spec:"chir_gen", results:[], current:null, detailTab:"synthese",
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.5.2";
+var VERSION = "1.5.3";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -100,7 +100,7 @@ function logo(){
 }
 function sliders(){
   return '<div class="card"><b>Classer selon ce qui compte pour vous</b><p class="muted">Ces curseurs changent l’ordre, pas un avis médical.</p>'+
-    slider("E","Expérience / ancienneté")+slider("F","Compétences / formation")+slider("P","Proximité")+slider("A","Signaux d’exercice (lieux, libéral)")+'</div>';
+    slider("E","Pratique réelle (HAS, exercice actuel)")+slider("F","Titres (plafond bas)")+slider("P","Proximité")+slider("A","Activité publiée")+'</div>';
 }
 function slider(k,l){
   return '<label>'+l+' · '+S.poids[k]+' %</label><input type="range" min="0" max="50" value="'+S.poids[k]+'" data-poids="'+k+'"/>';
@@ -259,28 +259,19 @@ function enrichOne(p){
   });
 }
 function qualifBoost(p){
-  var text = fold([].concat(p.diplomes||[], p.savoirFaire||[], p.autorisations||[], [p.sous]).join(" | "));
-  var pts = 0;
-  var reasons = [];
-  function add(n, label, cond){ if (cond) { pts += n; reasons.push(label+" +"+n); } }
-  add(18, "DES/DESC", text.indexOf("des ")>=0 || text.indexOf("desc")>=0 || text.indexOf("etudes specialisees")>=0);
-  add(10, "Capacité", text.indexOf("capacite")>=0);
-  add(8, "Diplôme d'État", text.indexOf("diplome d'etat")>=0 || text.indexOf("diplome d etat")>=0 || text.indexOf("d.e.")>=0);
-  add(8, "Doctorat", text.indexOf("doctorat")>=0 || text.indexOf("these")>=0);
-  add(6, "DU/DIU", text.indexOf("diplome universitaire")>=0 || /\bdu\b/.test(text) || text.indexOf("diu")>=0);
-  add(16, "Spécialité ordinale", text.indexOf("specialite ordinale")>=0);
-  add(12, "Compétence exclusive", text.indexOf("competence exclusive")>=0);
-  add(8, "Qualification", text.indexOf("qualification")>=0);
-  var nDip = (p.rawDipl&&p.rawDipl.length) || (p.diplomes&&p.diplomes.length) || 0;
-  var nSf = (p.rawSf&&p.rawSf.length) || (p.savoirFaire&&p.savoirFaire.length) || 0;
-  if (nDip>1) { pts += Math.min(12, (nDip-1)*3); reasons.push((nDip)+" diplômes"); }
-  if (nSf>1) { pts += Math.min(10, (nSf-1)*2); reasons.push((nSf)+" savoir-faire"); }
   var wanted = fold(RPPS_SF[S.spec]||SPEC[S.spec]||"");
-  var matchSpec = wanted && text.indexOf(wanted)>=0;
-  if (!matchSpec && wanted) matchSpec = wanted.split(" ").some(function(w){ return w.length>4 && text.indexOf(w)>=0; });
-  if (matchSpec) { pts += 14; reasons.push("aligné demande"); }
-  if (p.autorisations && p.autorisations.length) { pts += 6; reasons.push("autorisation d'exercice"); }
-  return {pts:Math.min(46, pts), reasons:reasons, matchSpec:!!matchSpec, nDip:nDip, nSf:nSf};
+  var sous = fold(p.sous||"");
+  var text = fold([].concat(p.diplomes||[], p.savoirFaire||[], [sous]).join(" | "));
+  var matchNow = wanted && (sous.indexOf(wanted)>=0 || (wanted.split(" ").some(function(w){ return w.length>4 && sous.indexOf(w)>=0; })));
+  var matchTitre = wanted && text.indexOf(wanted)>=0;
+  if (!matchTitre && wanted) matchTitre = wanted.split(" ").some(function(w){ return w.length>4 && text.indexOf(w)>=0; });
+  var titres = matchNow || matchTitre ? 22 : 6;
+  var reasons = [];
+  if (matchNow) reasons.push("exerce aujourd'hui la spécialité demandée");
+  else if (matchTitre) reasons.push("titre proche, exercice actuel différent");
+  else reasons.push("spécialité demandée non confirmée");
+  reasons.push("aucun bonus pour le nombre de diplômes");
+  return {pts:titres, reasons:reasons, matchSpec:!!matchNow, matchTitre:!!matchTitre};
 }
 function mapAllQualifs(list){
   var i=0, max=Math.min(list.length, 18);
@@ -316,41 +307,43 @@ function scoreOf(p){
   else if (p.spec===S.spec) fit = 40;
   if (p.communeExact) fit = Math.min(100, fit+4);
 
-  var comp = 8;
-  if (titre.indexOf("prof")>=0) comp += 28;
-  else if (titre.indexOf("dr")>=0 || titre.indexOf("doct")>=0) comp += 10;
-  if (p.hasDate) {
-    comp += 26;
-    var hy = parseInt(String(p.hasDate).slice(0,4),10);
-    if (hy>=2023) comp += 10;
-    else if (hy>=2018) comp += 6;
-  }
-  if (p.oa) comp += 4;
   var qb = qualifBoost(p);
-  comp += qb.pts;
-  if (qb.matchSpec) fit = Math.max(fit, 88);
-  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) comp = Math.min(comp, 22);
-  comp = Math.max(0, Math.min(100, comp));
+
+  var titres = qb.pts;
+  if (titre.indexOf("prof")>=0) titres = Math.min(30, titres+6);
+
+  var pratique = 10;
+  if (p.hasDate) {
+    pratique = 62;
+    var hy = parseInt(String(p.hasDate).slice(0,4),10);
+    if (hy>=2024) pratique += 16;
+    else if (hy>=2021) pratique += 10;
+    else if (hy>=2018) pratique += 6;
+    if (p.oa) pratique += 4;
+  }
+  if (qb.matchSpec) pratique += 12;
+  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) pratique = Math.min(pratique, 18);
+  pratique = Math.max(0, Math.min(100, pratique));
+
+  var activite = 12;
+  if (mode.indexOf("liberal")>=0 || mode.indexOf("salarie")>=0 || mode.indexOf("salarié")>=0) activite += 16;
+  if ((p.sites||1)>=2) activite += 10;
+  if (struct.indexOf("chu")>=0 || struct.indexOf("universitaire")>=0) activite += 8;
+  else if (struct.indexOf("hopital")>=0 || struct.indexOf("hôpital")>=0) activite += 5;
+  activite = Math.min(100, activite);
+
+  var comp = pratique;
+  if (qb.matchSpec) fit = Math.max(fit, 90);
+  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) {
+    comp = Math.min(comp, 18);
+    fit = Math.min(fit, 40);
+  }
 
   var years = null;
   if (p.annee && p.annee>1950 && p.annee<2027) years = 2026-p.annee;
-  var exp = years==null ? 18 : Math.min(78, 8+years*2.4);
-  exp += Math.min(18, Math.max(0, ((p.sites||1)-1)*8));
-  if (p.hasDate) exp += 8;
-  if (struct.indexOf("chu")>=0 || struct.indexOf("universitaire")>=0) exp += 8;
-  else if (struct.indexOf("hopital")>=0 || struct.indexOf("hôpital")>=0) exp += 5;
-  else if (struct.indexOf("clinique")>=0) exp += 3;
-  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) exp = Math.min(exp, 16);
-  exp = Math.max(0, Math.min(100, Math.round(exp)));
+  var exp = pratique;
 
-  var signaux = 10;
-  if (mode.indexOf("liberal")>=0) signaux += 18;
-  if (mode.indexOf("salarie")>=0 || mode.indexOf("salarié")>=0) signaux += 8;
-  if (p.tel) signaux += 14;
-  if (p.email) signaux += 8;
-  if ((p.sites||1)>=2) signaux += 12;
-  if (p.fhirOk) signaux += 8;
-  signaux = Math.min(100, signaux);
+  var signaux = activite;
 
   var prox = 40;
   if (p.communeExact) prox = 100;
@@ -373,15 +366,15 @@ function scoreOf(p){
   if (p.qualifsLoaded) data = Math.min(100, data+8);
 
   var w=S.poids, sum=(w.F+w.E+w.P+w.A)||1;
-  var qualite = Math.round((w.F/sum)*comp + (w.E/sum)*exp + (w.A/sum)*signaux + (w.P/sum)*prox);
-  var besoin = Math.round(0.62*fit + 0.38*qualite);
+  var qualite = Math.round((w.E/sum)*pratique + (w.F/sum)*titres + (w.A/sum)*activite + (w.P/sum)*prox);
+  var besoin = Math.round(0.70*fit + 0.30*pratique);
 
   var why = {
-    besoin: "Pertinence "+besoin+"/100 = 62 % adéquation à la demande ("+fit+"/100, « "+(p.sous||"—")+" » vs « "+(SPEC[S.spec]||"")+" ») + 38 % qualité.",
-    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+(qb.reasons.length?" · "+qb.reasons.join(", "):"")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)) + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
-    data: "Fiabilité des données "+data+"/100 : "+filled+"/"+fields.length+" champs publics. Ce score ne juge pas le chirurgien, seulement la richesse des sources."
+    besoin: "Pertinence "+besoin+"/100 = 70 % spécialité réellement exercée aujourd’hui (« "+(p.sous||"—")+" ») + 30 % pratique publiée. Les diplômes listés n’augmentent pas cette note.",
+    fiab: "Pratique "+qualite+"/100 : HAS/pratiques "+pratique+"/100"+(p.hasDate?" (accréditation "+p.hasDate+")":" (pas d’accréditation HAS = on ne peut pas affirmer de bonnes pratiques)")+" · titres (plafond) "+titres+"/100 · activité "+activite+"/100 · proximité "+prox+"/100. "+qb.reasons.join(" · ")+". Ce n’est pas un score clinique (pas de volume opératoire ni d’avis patients officiels).",
+    data: "Fiabilité des données "+data+"/100 : richesse des sources seulement, pas la qualité du geste."
   };
-  return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:comp, exp:exp, signaux:signaux, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
+  return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:pratique, exp:pratique, signaux:activite, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
 }
 
 function home(){
@@ -471,7 +464,7 @@ function resultsV(){
   if (S.busy) return '<h1>Recherche…</h1><p class="muted">Connexion aux sources officielles.</p>';
   if (!S.results.length) return '<button type="button" class="back" data-act="searchform">Modifier</button><div class="card"><h2>Aucun résultat</h2><p>Élargissez le rayon, changez de ville ou de spécialité.</p></div>';
   var list=ranked();
-  var sorts=[["qualite","Qualité"],["exp","Expérience"],["besoin","Pertinence"],["prox","Proximité"],["data","Données"]];
+  var sorts=[["qualite","Pratique"],["exp","HAS / pratique"],["besoin","Pertinence"],["prox","Proximité"],["data","Données"]];
   var filts=[["has","HAS seulement"],["tel","Téléphone public"],["liberal","Libéral"],["hopital","CHU / hôpital"]];
   return '<button type="button" class="back" data-act="searchform">Modifier</button><h1>'+esc(S.ville)+'</h1><p class="muted">'+list.length+' / '+S.results.length+' profils · '+esc(SPEC[S.spec]||"")+(S.srcNote?" · "+S.srcNote:"")+'</p>'+
     '<div class="chips">'+sorts.map(function(x){return '<button type="button" class="chip '+(S.sort===x[0]?"on":"")+'" data-act="sort" data-id="'+x[0]+'">'+x[1]+'</button>';}).join("")+'</div>'+
@@ -482,14 +475,14 @@ function whyBox(s){
   if (!s||!s.why) return "";
   return '<details class="why"><summary>Pourquoi cette note</summary>'+
     '<p><b>Pertinence '+s.besoin+'/100</b> — '+esc(s.why.besoin)+'</p>'+
-    '<p><b>Qualité '+s.fiab+'/100</b> — '+esc(s.why.fiab)+'</p>'+
+    '<p><b>Pratique '+s.fiab+'/100</b> — '+esc(s.why.fiab)+'</p>'+
     '<p><b>Données '+s.data+'/100</b> — '+esc(s.why.data)+'</p></details>';
 }
 function cardMini(p){
   var s=p.sc||scoreOf(p); p.sc=s;
   return '<div class="item"><div class="row"><h3 style="margin:0">'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h3><span class="muted">'+(s.dist!=null?s.dist+" km":esc(p.ville||""))+'</span></div>'+
     '<div class="muted">'+esc(p.sous||SPEC[p.spec]||"")+' · '+esc(p.ville||"")+'</div>'+
-    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Qualité</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div>'+
+    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Pratique</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div>'+
     whyBox(s)+
     '<button type="button" class="btn soft" data-act="fiche" data-id="'+p.id+'">Voir la fiche</button></div>';
 }
@@ -503,7 +496,7 @@ function ficheV(){
   if (S.detailTab==="synthese") {
     body = photoBlock+'<p class="muted">'+ageLine+'</p>'+
       '<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100 ✓</b><span>Pertinence besoin · '+lecture(s.besoin)+'</span></div>'+
-      '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Qualité (compétence + expérience) · '+lecture(s.fiab)+'</span></div>'+
+      '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Pratique publiée · '+lecture(s.fiab)+'</span></div>'+
       '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Fiabilité des données seules</span></div></div>'+
       whyBox(s)+
       '<div class="card"><b>Formation et compétences publiées</b>'+
