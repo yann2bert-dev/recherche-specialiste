@@ -6,8 +6,11 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
+var VERSION = "1.3.0";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
+try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
+try { var pw=JSON.parse(localStorage.getItem("rs_poids")||"null"); if(pw&&pw.F!=null) S.poids=pw; } catch(e) {}
 
 var SPEC = {
   chir_gen:"Chirurgie générale / viscérale", chir_vasc:"Chirurgie vasculaire",
@@ -80,11 +83,25 @@ function esc(s){
   t = t.split('"').join("&#34;");
   return t;
 }
-function persist(){ localStorage.setItem("rs_hist", JSON.stringify(S.history.slice(0,50))); localStorage.setItem("rs_pins", JSON.stringify(S.pins.slice(0,2))); }
+function persist(){
+  localStorage.setItem("rs_hist", JSON.stringify(S.history.slice(0,50)));
+  localStorage.setItem("rs_pins", JSON.stringify(S.pins.slice(0,2)));
+  localStorage.setItem("rs_poids", JSON.stringify(S.poids));
+  if (S.lastSearch) localStorage.setItem("rs_last", JSON.stringify(S.lastSearch));
+}
 function cls(n){ return n>=75?"ok":n>=55?"warn":"bad"; }
 function lecture(n){ return n>=75?"lecture favorable":n>=55?"lecture prudente":"vigilance"; }
 function avg(a){ var x=a.filter(function(v){return v!=null;}); return x.length?x.reduce(function(p,c){return p+c;},0)/x.length:5; }
-function logo(){ return '<div class="topbar"><img src="logo.png" alt="logo"/><div><b>BY Innovation</b><span>Recherche de Spécialistes</span></div></div>'; }
+function logo(){
+  return '<div class="topbar"><img src="logo.png" alt="logo"/><div class="brand"><b>BY Innovation</b><span>Recherche de Spécialistes</span></div><div class="ver">v'+VERSION+'</div></div>';
+}
+function sliders(){
+  return '<div class="card"><b>Ce qui compte pour vous</b><p class="muted">Ces poids changent le classement.</p>'+
+    slider("F","Fiabilité professionnelle")+slider("A","Avis / signaux")+slider("P","Proximité")+slider("E","Ancienneté / suivi")+'</div>';
+}
+function slider(k,l){
+  return '<label>'+l+' · '+S.poids[k]+' %</label><input type="range" min="0" max="50" value="'+S.poids[k]+'" data-poids="'+k+'"/>';
+}
 function go(sc, tab){ S.screen=sc; if(tab) S.tab=tab; render(); }
 window.go = go;
 window.goBack = function(){
@@ -117,35 +134,87 @@ function parseBody(res){
 }
 
 function scoreOf(p){
-  var dist = (S.lat!=null && p.lat!=null) ? (function(){
-    var R=6371,dLat=(p.lat-S.lat)*Math.PI/180,dLon=(p.lon-S.lon)*Math.PI/180;
-    var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(S.lat*Math.PI/180)*Math.cos(p.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-    return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-  })() : (p.ville && fold(p.ville).indexOf(fold(S.ville))>=0 ? 3 : null);
-  var prox = dist==null ? 6 : Math.max(0, 10*(1-dist/Math.max(S.rayon,1)));
-  var years = p.annee ? Math.min(10,(2026-p.annee)/3) : 6;
-  var F = avg([p.noteDip,p.noteCert,p.noteConf]);
-  var A = avg([p.noteAvis,p.noteReco]);
+  var wanted = fold(RPPS_SF[S.spec]||"");
+  var sous = fold(p.sous||"");
+  var fit10 = 4;
+  if (p.spec===S.spec && sous.indexOf(wanted)>=0) fit10 = 9;
+  if (sous===wanted) fit10 = 10;
+  else if (sous.indexOf(wanted)>=0) fit10 = Math.max(fit10, 8);
+  else if (wanted && sous.indexOf(wanted.split(" ")[0])>=0) fit10 = Math.max(fit10, 6);
+  if (p.communeExact) fit10 = Math.min(10, fit10+1);
+
+  var F = 3;
+  if (p.rpps && String(p.rpps).length>=8) F += 2;
+  if (p.hasDate) {
+    F += 3;
+    var y = parseInt(String(p.hasDate).slice(0,4),10);
+    if (y>=2024) F += 2;
+    else if (y>=2022) F += 1;
+  }
+  if (p.oa) F += 0.5;
+  F = Math.min(10, F);
+
+  var A = 5;
+  if (p.hasDate) A += 1;
+  if ((p.sites||1)>1) A += Math.min(2, (p.sites-1)*0.7);
+  if (p.mode && fold(p.mode).indexOf("liberal")>=0) A += 0.4;
+  A = Math.min(10, A);
+
+  var deptOnly = String(p.ville||"").indexOf("Dép.")===0;
+  var prox = 5;
+  if (p.communeExact) prox = 10;
+  else if (!deptOnly && p.ville && fold(p.ville).indexOf(fold(S.ville))>=0) prox = 9;
+  else if (deptOnly) prox = 4;
+  if (S.lat!=null && p.realLat!=null) {
+    var R=6371,dLat=(p.realLat-S.lat)*Math.PI/180,dLon=(p.realLon-S.lon)*Math.PI/180;
+    var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(S.lat*Math.PI/180)*Math.cos(p.realLat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+    var distKm=2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+    prox = Math.max(0, 10*(1-distKm/Math.max(S.rayon,1)));
+    p._dist = Math.round(distKm*10)/10;
+  }
+
+  var E = 4;
+  if (p.hasDate) {
+    var hy = parseInt(String(p.hasDate).slice(0,4),10);
+    if (hy) E = Math.min(10, 4 + Math.max(0, 2026-hy)*0.6);
+  }
+  if (p.annee) E = Math.min(10, (2026-p.annee)/3);
+  if ((p.sites||1)>=2) E = Math.min(10, E+1);
+
+  var fields = ["rpps","tel","email","adresse","structure","finess","sous","mode","hasDate","ville"];
+  var filled = 0;
+  fields.forEach(function(k){ if (p[k] && String(p[k]).indexOf("Dép.")!==0) filled++; });
+  var data = Math.round(100 * filled / fields.length);
+  if (p.src && p.src.indexOf("RPPS")>=0 && p.src.indexOf("HAS")>=0) data = Math.min(100, data+8);
+
   var w=S.poids, sum=w.F+w.A+w.P+w.E||1;
-  var fiab = Math.round(10*((w.F/sum)*F+(w.A/sum)*A+(w.P/sum)*prox+(w.E/sum)*years));
-  var fit = (fold(p.sous||"").indexOf(fold(RPPS_SF[S.spec]||S.spec))>=0 || p.spec===S.spec) ? 0.92 : 0.6;
-  var data = 55;
-  if (p.src && p.src.indexOf("RPPS")>=0) data += 20;
-  if (p.src && p.src.indexOf("HAS")>=0) data += 18;
-  if (p.tel) data += 5;
-  if (p.rpps) data += 2;
-  data = Math.min(100, data);
-  return {fiab:fiab, besoin:Math.round(0.55*fiab+0.45*fit*100), dist:dist==null?null:Math.round(dist*10)/10, data:data};
+  var fiab = Math.round(10*((w.F/sum)*F+(w.A/sum)*A+(w.P/sum)*prox+(w.E/sum)*E));
+  var besoin = Math.round(0.45*(fit10*10)+0.35*fiab+0.20*data);
+  var why = {
+    besoin: "Pertinence "+besoin+"/100 = 45 % adéquation spécialité ("+fit10+"/10) + 35 % fiabilité pondérée ("+fiab+") + 20 % richesse des données ("+data+"). Spécialité demandée : "+(SPEC[S.spec]||S.spec)+". Libellé trouvé : "+(p.sous||"—")+".",
+    fiab: "Fiabilité "+fiab+"/100 avec vos poids Fiabilité "+w.F+" %, Avis "+w.A+" %, Proximité "+w.P+" %, Ancienneté "+w.E+" %. Notes /10 : F="+F.toFixed(1)+" (RPPS"+(p.hasDate?" + HAS "+p.hasDate:"")+") · A="+A.toFixed(1)+" (avis patients absents en open data = neutre 5) · P="+prox.toFixed(1)+" · E="+E.toFixed(1)+".",
+    data: "Données "+data+"/100 : "+filled+" champs remplis sur "+fields.length+" (RPPS, téléphone, e-mail, adresse, structure, FINESS, savoir-faire, mode, date HAS, commune). "+(p.src||"")+"."
+  };
+  return {fiab:fiab, besoin:besoin, data:data, dist:p._dist!=null?p._dist:(deptOnly?null:2), why:why, F:F, A:A, P:prox, E:E, fit10:fit10};
 }
 
 function home(){
-  return logo()+'<h1>Quel spécialiste chercher ?</h1><p class="muted">Décrivez un symptôme ou choisissez une spécialité. 3 questions max.</p>'+
+  var last = S.lastSearch;
+  return logo()+
+    '<div class="hero"><img src="logo.png" alt="BY Innovation"/><h1>Recherche de Spécialistes</h1><p class="muted">L’application oriente vers un type de spécialiste et compare des profils publics. Elle ne pose aucun diagnostic et ne remplace pas un avis médical.</p></div>'+
+    '<div class="urg"><b>En cas d’urgence</b>'+
+    '<p><button type="button" class="linkurg" data-act="callurg" data-tel="15"><b>15 SAMU</b></button> — malaise, douleur violente, hémorragie, détresse vitale.</p>'+
+    '<p><button type="button" class="linkurg" data-act="callurg" data-tel="18"><b>18 Pompiers</b></button> — feu, accident, personne coincée, secours.</p>'+
+    '<p><button type="button" class="linkurg" data-act="callurg" data-tel="17"><b>17 Police</b></button> — agression, vol en cours, danger immédiat.</p>'+
+    '<p><button type="button" class="linkurg" data-act="callurg" data-tel="112"><b>112</b></button> — numéro unique européen.</p>'+
+    '<p><b>114</b> — SMS / fax d’urgence si vous ne pouvez pas parler (sourds, malentendants, impossibilité de téléphoner).</p></div>'+
     villeBox()+
     '<button type="button" class="btn primary" data-act="quiz">Décrire un symptôme</button>'+
     '<button type="button" class="btn ghost" data-act="searchform">Choisir une spécialité</button>'+
+    sliders()+
     '<button type="button" class="btn soft" data-act="apis">Sources & API — tester</button>'+
-    (S.history[0]?'<div class="card"><div class="muted">Dernière recherche</div><b>'+esc(S.history[0].label)+'</b><button type="button" class="btn soft" data-act="replay" data-i="0">Reprendre</button></div>':'')+
-    '<p class="disclaimer">Aide à l’orientation, pas un diagnostic. Urgence : 15.</p>';
+    (last?'<div class="card"><div class="muted">Dernière recherche</div><b>'+esc(last.label)+'</b><button type="button" class="btn soft" data-act="replay-last">Reprendre</button></div>':'')+
+    '<p class="disclaimer">Pas un dispositif médical. Urgences : 15 · 18 · 17 · 112 · SMS 114.</p>';
 }
 function villeBox(){
   return '<div class="card"><label>Ville</label><input id="ville" value="'+esc(S.ville)+'" placeholder="Tapez une ville, ex. Aix-en-Provence" autocomplete="off"/>'+
@@ -181,9 +250,10 @@ function orientV(){
 }
 function searchForm(){
   var opts=""; for (var k in SPEC) opts += '<option value="'+k+'" '+(S.spec===k?"selected":"")+'>'+SPEC[k]+'</option>';
-  return '<h1>Recherche</h1>'+villeBox()+
+  return logo()+'<h1>Recherche</h1>'+villeBox()+
     '<label>Spécialité</label><select id="spec">'+opts+'</select>'+
     '<label>Rayon</label><select id="rayon">'+[10,25,50,100].map(function(r){return '<option '+(S.rayon===r?"selected":"")+' value="'+r+'">'+r+' km</option>';}).join("")+'</select>'+
+    sliders()+
     '<button type="button" class="btn primary" data-act="run">'+(S.busy?"Recherche…":"Lancer la recherche")+'</button>'+
     (S.busy?'<p class="muted">Interrogation RPPS + HAS en cours…</p>':'');
 }
@@ -193,11 +263,20 @@ function resultsV(){
   return '<button type="button" class="back" data-act="searchform">Modifier</button><h1>'+esc(S.ville)+'</h1><p class="muted">'+S.results.length+' profils · '+esc(SPEC[S.spec]||"")+(S.srcNote?" · "+S.srcNote:"")+'</p>'+
     S.results.map(cardMini).join("")+'<p class="disclaimer">Classement d’aide à la lecture des sources ouvertes. Pas un avis médical.</p>';
 }
+function whyBox(s){
+  if (!s||!s.why) return "";
+  return '<details class="why"><summary>Pourquoi cette note</summary>'+
+    '<p><b>Pertinence '+s.besoin+'/100</b> — '+esc(s.why.besoin)+'</p>'+
+    '<p><b>Fiabilité '+s.fiab+'/100</b> — '+esc(s.why.fiab)+'</p>'+
+    '<p><b>Données '+s.data+'/100</b> — '+esc(s.why.data)+'</p></details>';
+}
 function cardMini(p){
-  var s=p.sc||scoreOf(p);
-  return '<div class="item" data-act="fiche" data-id="'+p.id+'"><div class="row"><h3 style="margin:0">'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h3><span class="muted">'+(s.dist!=null?s.dist+" km":esc(p.ville||""))+'</span></div>'+
+  var s=p.sc||scoreOf(p); p.sc=s;
+  return '<div class="item"><div class="row"><h3 style="margin:0">'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h3><span class="muted">'+(s.dist!=null?s.dist+" km":esc(p.ville||""))+'</span></div>'+
     '<div class="muted">'+esc(p.sous||SPEC[p.spec]||"")+' · '+esc(p.ville||"")+'</div>'+
-    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Fiabilité</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div></div>';
+    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Fiabilité</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div>'+
+    whyBox(s)+
+    '<button type="button" class="btn soft" data-act="fiche" data-id="'+p.id+'">Voir la fiche</button></div>';
 }
 function ficheV(){
   var p=S.current; if(!p) return '<button type="button" class="back" data-act="home">Retour</button>';
@@ -208,6 +287,7 @@ function ficheV(){
     body = '<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100 ✓</b><span>Pertinence besoin · '+lecture(s.besoin)+'</span></div>'+
       '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Fiabilité · '+lecture(s.fiab)+'</span></div>'+
       '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Confiance dans les données</span></div></div>'+
+      whyBox(s)+
       '<div class="row"><div class="metric"><b>'+esc(p.sous||SPEC[p.spec]||"—")+'</b><span class="muted">Savoir-faire</span></div><div class="metric"><b>'+esc(p.mode||"—")+'</b><span class="muted">Mode d’exercice</span></div></div>'+
       '<div class="row" style="margin-top:8px"><div class="card"><b class="fav">Points favorables</b>'+
         (p.hasDate?'<div class="fav">✓ Accréditation HAS '+esc(p.hasDate)+'</div>':'')+
@@ -241,24 +321,34 @@ function hist(){
     S.history.map(function(h,i){return '<div class="item" data-act="replay" data-i="'+i+'"><b>'+esc(h.label)+'</b><div class="muted">'+new Date(h.at).toLocaleString("fr-FR")+'</div></div>';}).join("");
 }
 function profil(){
-  return logo()+'<h1>Profil</h1><button type="button" class="btn soft" data-act="apis">Sources & API</button><p class="muted">Les recherches interrogent les API officielles. Données stockées seulement sur l’appareil.</p>';
+  return logo()+'<h1>Profil</h1>'+sliders()+
+    '<button type="button" class="btn soft" data-act="apis">Sources & API</button>'+
+    '<p class="muted">Version '+VERSION+'. Les recherches interrogent les API officielles. Données stockées seulement sur l’appareil.</p>';
 }
 function apis(){
+  var key = localStorage.getItem("fhirKey")||"";
   var rows = [
     ["geo","Géocodage geo.api.gouv.fr","Ville → code commune INSEE. Gratuit, sans clé.","https://geo.api.gouv.fr/communes?nom=Aix-en-Provence&fields=nom,code,departement,centre&limit=1"],
     ["rpps","RPPS tabulaire data.gouv.fr","Identité, spécialité, commune, téléphone public.","https://tabular-api.data.gouv.fr/api/resources/"+RID_RPPS+"/data/?page_size=1"],
     ["has","HAS médecins accrédités","Accréditation officielle, spécialité, département.","https://tabular-api.data.gouv.fr/api/resources/"+RID_HAS+"/data/?page_size=1"],
     ["datagouv","Métadonnées Annuaire Santé","Jeu RPPS publié chaque jour.","https://www.data.gouv.fr/api/1/datasets/annuaire-sante-extractions-des-donnees-en-libre-acces-des-professionnels-intervenant-dans-le-systeme-de-sante-rpps/"],
-    ["fhir","API FHIR Annuaire Santé ANS","Optionnelle. 403 sans clé portail ANS.","https://gateway.api.esante.gouv.fr/fhir/v2/metadata"]
+    ["fhir","API FHIR Annuaire Santé ANS","L’ANS impose une clé Gravitee. Sans clé le serveur répond 403 : ce n’est pas un bug de l’app. Créez une clé sur portal.api.esante.gouv.fr puis collez-la ici.","https://gateway.api.esante.gouv.fr/fhir/v2/metadata"]
   ];
-  var html = logo()+'<button type="button" class="back" data-act="profil">Retour</button><h1>Sources & API</h1><p class="muted">Chaque bouton interroge vraiment le serveur. La recherche utilise GEO + RPPS + HAS. FHIR n’est utile qu’avec une clé.</p>'+
-    '<div class="card"><label>Clé FHIR ANS (optionnelle)</label><input id="fhirKey" value="'+esc(localStorage.getItem("fhirKey")||"")+'" placeholder="ESANTE-API-KEY"/></div>';
+  var html = logo()+'<button type="button" class="back" data-act="profil">Retour</button><h1>Sources & API</h1>'+
+    '<div class="banner">Recherche réelle = geo.api.gouv.fr + RPPS + HAS. FHIR n’ajoute des fiches que si une clé ANS valide est collée.</div>'+
+    '<div class="card"><label>Clé FHIR ANS</label><input id="fhirKey" value="'+esc(key)+'" placeholder="Collez la clé ESANTE-API-KEY"/>'+
+    '<p class="muted">1) Compte sur portal.api.esante.gouv.fr · 2) Souscrire « API Annuaire Santé en libre accès » · 3) Copier la clé · 4) Tester.</p>'+
+    '<button type="button" class="btn ghost" data-act="openurl" data-url="https://portal.api.esante.gouv.fr/">Ouvrir le portail ANS</button></div>';
   rows.forEach(function(r){
     var t=S.apiTests[r[0]];
-    var badge=t?(t.ok?'<span class="status onair">OK '+t.status+'</span>':'<span class="status err">Échec '+(t.status||"")+'</span>'):'<span class="status offair">Non testé</span>';
+    var badge;
+    if (!t) badge='<span class="status offair">Non testé</span>';
+    else if (t.ok) badge='<span class="status onair">OK '+t.status+'</span>';
+    else if (r[0]==="fhir" && t.status===403) badge='<span class="status err">Clé requise · 403</span>';
+    else badge='<span class="status err">Échec '+(t.status||"")+'</span>';
     html += '<div class="card"><div class="row"><b>'+r[1]+'</b>'+badge+'</div><p class="muted">'+r[2]+'</p>'+
       '<button type="button" class="btn ghost" data-act="test" data-id="'+r[0]+'" data-url="'+esc(r[3])+'">Tester la connexion</button>'+
-      (t?'<p class="muted">'+esc((t.preview||t.error||"").toString().slice(0,220))+'</p>':'')+'</div>';
+      (t?'<p class="muted">'+esc((t.preview||t.error||"").toString().slice(0,240))+'</p>':'')+'</div>';
   });
   html += '<button type="button" class="btn primary" data-act="testall">Tout tester</button>';
   return html;
@@ -296,9 +386,10 @@ function mapRpps(r){
     lat:S.lat, lon:S.lon, tel:tel, email:r["Adresse e-mail (coord. structure)"]||"",
     adresse:[r["Numéro Voie (coord. structure)"], r["Libellé type de voie (coord. structure)"], r["Libellé Voie (coord. structure)"], ville].filter(Boolean).join(" "),
     structure:r["Raison sociale site"]||"", finess:r["Numéro FINESS site"]||"",
-    annee:null, diplomes:[], hasDate:"",
+    communeExact: fold(ville)===fold(S.ville) || (S.code && String(r["Code commune (coord. structure)"]||"")===String(S.code)),
+    annee:null, diplomes:[], hasDate:"", oa:"",
     noteDip:7, noteCert:4, noteAvis:5, noteReco:6, noteConf:5,
-    mode:mode, rpps:rpps, src:"RPPS open data"
+    mode:mode, rpps:rpps, src:"RPPS open data", sites:1, secteur:r["Libellé secteur d'activité"]||""
   };
 }
 function mapHas(r){
@@ -309,9 +400,9 @@ function mapHas(r){
     sous:String(r["Spécialité"]||"").replace(/;/g," ").trim(),
     ville:"Dép. "+(r["Département"]||S.dept||"?"), dept:String(r["Département"]||S.dept||""), lat:S.lat, lon:S.lon,
     tel:"", email:"", adresse:"", structure:"", finess:r.FINESS||"",
-    annee:null, diplomes:[], hasDate:r["Date accréditation"]||"",
+    annee:null, diplomes:[], hasDate:r["Date accréditation"]||"", oa:r.OA||"",
     noteDip:7, noteCert:9, noteAvis:5, noteReco:7, noteConf:5,
-    mode:r.Statut||"", rpps:rpps, src:"HAS open data"
+    mode:r.Statut||"", rpps:rpps, src:"HAS open data", sites:1, communeExact:false
   };
 }
 
@@ -344,8 +435,13 @@ function runSearch(){
       var k=p.rpps;
       if (!by[k]) by[k]=p;
       else {
-        if (p.hasDate) { by[k].hasDate=p.hasDate; by[k].noteCert=9; }
+        by[k].sites = (by[k].sites||1)+1;
+        if (p.hasDate) { by[k].hasDate=p.hasDate; by[k].noteCert=9; by[k].oa=p.oa||by[k].oa; }
         if (p.tel && !by[k].tel) by[k].tel=p.tel;
+        if (p.email && !by[k].email) by[k].email=p.email;
+        if (p.adresse && !by[k].adresse) by[k].adresse=p.adresse;
+        if (p.structure && !by[k].structure) by[k].structure=p.structure;
+        if (p.communeExact) { by[k].communeExact=true; by[k].ville=p.ville; }
         if (p.sous && (!by[k].sous || by[k].sous.length<p.sous.length)) by[k].sous=p.sous;
         by[k].src = Array.from(new Set((by[k].src+","+p.src).split(","))).join(" + ");
       }
@@ -360,7 +456,7 @@ function runSearch(){
     S.results=list.slice(0,40);
     S.srcNote=(parts||[]).map(function(p){return p.kind.toUpperCase()+" "+((parseBody(p.res)||{}).meta||{}).total;}).join(" · ");
     if (!S.results.length) S.srcNote="aucune ligne pour cette commune / spécialité";
-    S.lastSearch={label:(SPEC[S.spec]||"")+" · "+S.ville+" · "+S.rayon+" km", spec:S.spec, ville:S.ville, at:Date.now()};
+    S.lastSearch={label:(SPEC[S.spec]||"")+" · "+S.ville+" · "+S.rayon+" km", spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()};
     S.history.unshift({type:"RECHERCHE", label:S.lastSearch.label, spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()});
     persist();
     S.busy=false; render();
@@ -384,7 +480,11 @@ function testApi(id, url){
   if (id==="fhir" && localStorage.getItem("fhirKey")) header="ESANTE-API-KEY:"+localStorage.getItem("fhirKey");
   httpGet(url, header).then(function(res){
     var preview=(res.body||res.error||"").toString().slice(0,180);
-    if (id==="fhir" && !res.ok) preview="HTTP "+res.status+" — l’ANS exige une clé (portal.api.esante.gouv.fr). La recherche marche déjà via RPPS + HAS.";
+    if (id==="fhir" && !res.ok) {
+      preview = res.status===403
+        ? "403 confirmé sans clé ANS. Créez-en une sur portal.api.esante.gouv.fr (souscription Annuaire Santé libre accès). RPPS + HAS suffisent pour chercher."
+        : "HTTP "+res.status+" — "+preview;
+    }
     S.apiTests[id]={ok:!!res.ok,status:res.status||0,preview:preview,error:res.error}; render();
   });
 }
@@ -412,7 +512,16 @@ function bindFields(){
   var r=document.getElementById("rayon"); if (r) r.addEventListener("change", function(){ S.rayon=+this.value; });
   var t=document.getElementById("symtxt"); if (t) t.addEventListener("input", function(){ S.q.texte=this.value; });
   var d=document.getElementById("duree"); if (d) d.addEventListener("change", function(){ S.q.duree=this.value; });
-  var k=document.getElementById("fhirKey"); if (k) k.addEventListener("change", function(){ localStorage.setItem("fhirKey", this.value); });
+  var k=document.getElementById("fhirKey"); if (k) k.addEventListener("change", function(){ localStorage.setItem("fhirKey", this.value.trim()); });
+  var ranges=document.querySelectorAll("[data-poids]");
+  for (var i=0;i<ranges.length;i++){
+    ranges[i].addEventListener("input", function(){
+      S.poids[this.getAttribute("data-poids")]=+this.value;
+      persist();
+      var lab=this.previousElementSibling;
+      if (lab) lab.textContent=lab.textContent.replace(/\d+ %/, S.poids[this.getAttribute("data-poids")]+" %");
+    });
+  }
 }
 function liveSuggest(q){
   var box=document.getElementById("suggest"); if (!box) return;
@@ -470,12 +579,25 @@ document.addEventListener("click", function(e){
   else if (act==="run") runSearch();
   else if (act==="fiche") openFiche(el.getAttribute("data-id"));
   else if (act==="dtab") { S.detailTab=el.getAttribute("data-id"); render(); }
+  else if (act==="replay-last") {
+    var h=S.lastSearch; if(!h){ alert("Aucune recherche à reprendre."); return; }
+    S.spec=h.spec; S.ville=h.ville; S.code=h.code; S.dept=h.dept; S.lat=h.lat; S.lon=h.lon; S.rayon=h.rayon||25;
+    runSearch();
+  }
   else if (act==="replay") {
     var h=S.history[+el.getAttribute("data-i")];
     if (!h) return;
     if (h.type==="FICHE") return;
     S.spec=h.spec; S.ville=h.ville; S.code=h.code; S.dept=h.dept; S.lat=h.lat; S.lon=h.lon; S.rayon=h.rayon||25;
     runSearch();
+  }
+  else if (act==="callurg") {
+    var tel=el.getAttribute("data-tel");
+    if (window.Android && Android.call) Android.call(tel); else location.href="tel:"+tel;
+  }
+  else if (act==="openurl") {
+    var u=el.getAttribute("data-url");
+    if (window.Android && Android.openUrl) Android.openUrl(u); else window.open(u,"_blank");
   }
   else if (act==="wipe") { S.history=[]; persist(); render(); }
   else if (act==="test") testApi(el.getAttribute("data-id"), el.getAttribute("data-url"));
