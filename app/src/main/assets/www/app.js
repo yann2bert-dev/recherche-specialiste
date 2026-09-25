@@ -297,7 +297,7 @@ function scoreOf(p){
 
   var why = {
     besoin: "Pertinence "+besoin+"/100 = 62 % adéquation à la demande ("+fit+"/100, « "+(p.sous||"—")+" » vs « "+(SPEC[S.spec]||"")+" ») + 38 % qualité.",
-    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)")+" + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
+    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)) + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
     data: "Fiabilité des données "+data+"/100 : "+filled+"/"+fields.length+" champs publics. Ce score ne juge pas le chirurgien, seulement la richesse des sources."
   };
   return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:comp, exp:exp, signaux:signaux, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
