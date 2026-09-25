@@ -7,7 +7,7 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.5.3";
+var VERSION = "1.5.4";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -273,11 +273,45 @@ function qualifBoost(p){
   reasons.push("aucun bonus pour le nombre de diplômes");
   return {pts:titres, reasons:reasons, matchSpec:!!matchNow, matchTitre:!!matchTitre};
 }
+function envScore(p){
+  var st = fold(p.structure||"");
+  var sec = fold(p.secteur||"");
+  var t = st+" "+sec;
+  if (t.indexOf("chu")>=0 || t.indexOf("universitaire")>=0 || t.indexOf("apu")>=0) return {n:36, label:"CHU / universitaire (environnement complexe)"};
+  if (t.indexOf("chr")>=0 || t.indexOf("regional")>=0) return {n:28, label:"CHR / hôpital régional"};
+  if (t.indexOf("hopital")>=0 || t.indexOf("hôpital")>=0 || t.indexOf("ch ")>=0 || t.indexOf("centre hospitalier")>=0) return {n:24, label:"Hôpital"};
+  if (t.indexOf("clinique")>=0 || t.indexOf("polyclinique")>=0) return {n:16, label:"Clinique"};
+  if (t.indexOf("cabinet")>=0 || t.indexOf("liberal")>=0) return {n:8, label:"Cabinet / ville"};
+  return {n:10, label:p.structure?"Structure mixte ou non classée":"Lieu d’exercice peu renseigné"};
+}
+function enrichImpact(p){
+  if (!p || !p.nom || !p.prenom) return Promise.resolve(p);
+  if (p.impactLoaded) return Promise.resolve(p);
+  var nom = String(p.nom).trim();
+  var prenom = String(p.prenom).trim();
+  if (nom.length<3 || prenom.length<2) return Promise.resolve(p);
+  var qHal = "https://api.archives-ouvertes.fr/search/?wt=json&rows=0&q="+encodeURIComponent("authLastName_t:\""+nom+"\" AND authFirstName_t:\""+prenom+"\"");
+  var qComm = qHal+"&fq="+encodeURIComponent("docType_s:COMM");
+  var ville = p.ville && String(p.ville).indexOf("Dép.")!==0 ? p.ville : (S.ville||"France");
+  var qPm = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=0&tool=RechercheSpecialiste&email=contact@example.fr&term="+encodeURIComponent(nom+" "+prenom+"[Author] AND (France[AD] OR "+ville+"[AD])");
+  return Promise.all([httpGet(qHal), httpGet(qComm), httpGet(qPm)]).then(function(arr){
+    var hal = parseBody(arr[0]) || {};
+    var comm = parseBody(arr[1]) || {};
+    var pm = parseBody(arr[2]) || {};
+    p.halN = (hal.response && hal.response.numFound) || 0;
+    p.commN = (comm.response && comm.response.numFound) || 0;
+    p.pmN = parseInt((pm.esearchresult && pm.esearchresult.count) || "0", 10) || 0;
+    p.impactUncertain = p.halN>80 || p.pmN>80;
+    p.impactLoaded = true;
+    p.sc = scoreOf(p);
+    return p;
+  }).catch(function(){ p.impactLoaded=true; return p; });
+}
 function mapAllQualifs(list){
   var i=0, max=Math.min(list.length, 18);
   function step(){
     if (i>=max) return Promise.resolve(list);
-    return enrichQualifs(list[i]).then(function(){ list[i].sc=scoreOf(list[i]); i++; return step(); });
+    return enrichQualifs(list[i]).then(function(){ return enrichImpact(list[i]); }).then(function(){ list[i].sc=scoreOf(list[i]); i++; return step(); });
   }
   return step();
 }
@@ -309,28 +343,45 @@ function scoreOf(p){
 
   var qb = qualifBoost(p);
 
-  var titres = qb.pts;
-  if (titre.indexOf("prof")>=0) titres = Math.min(30, titres+6);
+  var titres = qb.matchSpec ? 18 : (qb.matchTitre ? 10 : 6);
+  var text = fold([].concat(p.diplomes||[], p.savoirFaire||[]).join(" | "));
+  if (text.indexOf("des ")>=0 || text.indexOf("desc")>=0 || text.indexOf("etudes specialisees")>=0) titres += 10;
+  if (text.indexOf("specialite ordinale")>=0) titres += 8;
+  titres = Math.min(36, titres);
 
-  var pratique = 10;
-  if (p.hasDate) {
-    pratique = 62;
-    var hy = parseInt(String(p.hasDate).slice(0,4),10);
-    if (hy>=2024) pratique += 16;
-    else if (hy>=2021) pratique += 10;
-    else if (hy>=2018) pratique += 6;
-    if (p.oa) pratique += 4;
+  var ev = envScore(p);
+  var pubs = 0;
+  var pubNote = "publications non cherchées";
+  if (p.impactLoaded) {
+    if (p.impactUncertain) {
+      pubNote = "homonyme possible (HAL "+(p.halN||0)+" · PubMed "+(p.pmN||0)+") : non compté";
+    } else {
+      var n = Math.max(p.halN||0, p.pmN||0);
+      if (n>=16) pubs = 18;
+      else if (n>=6) pubs = 12;
+      else if (n>=2) pubs = 8;
+      else if (n>=1) pubs = 4;
+      if ((p.commN||0)>=3) pubs = Math.min(22, pubs+6);
+      else if ((p.commN||0)>=1) pubs = Math.min(22, pubs+3);
+      pubNote = "HAL "+(p.halN||0)+" · communications "+(p.commN||0)+" · PubMed "+(p.pmN||0);
+    }
   }
-  if (qb.matchSpec) pratique += 12;
+
+  var pratique = 8;
+  if (p.hasDate) {
+    pratique = 48;
+    var hy = parseInt(String(p.hasDate).slice(0,4),10);
+    if (hy>=2024) pratique += 12;
+    else if (hy>=2021) pratique += 8;
+  }
+  pratique += Math.round(ev.n*0.35);
+  pratique += pubs;
+  if (qb.matchSpec) pratique += 8;
   if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) pratique = Math.min(pratique, 18);
   pratique = Math.max(0, Math.min(100, pratique));
 
-  var activite = 12;
-  if (mode.indexOf("liberal")>=0 || mode.indexOf("salarie")>=0 || mode.indexOf("salarié")>=0) activite += 16;
-  if ((p.sites||1)>=2) activite += 10;
-  if (struct.indexOf("chu")>=0 || struct.indexOf("universitaire")>=0) activite += 8;
-  else if (struct.indexOf("hopital")>=0 || struct.indexOf("hôpital")>=0) activite += 5;
-  activite = Math.min(100, activite);
+  var activite = ev.n;
+  if ((p.sites||1)>=2) activite = Math.min(100, activite+8);
 
   var comp = pratique;
   if (qb.matchSpec) fit = Math.max(fit, 90);
@@ -342,7 +393,6 @@ function scoreOf(p){
   var years = null;
   if (p.annee && p.annee>1950 && p.annee<2027) years = 2026-p.annee;
   var exp = pratique;
-
   var signaux = activite;
 
   var prox = 40;
@@ -367,12 +417,12 @@ function scoreOf(p){
 
   var w=S.poids, sum=(w.F+w.E+w.P+w.A)||1;
   var qualite = Math.round((w.E/sum)*pratique + (w.F/sum)*titres + (w.A/sum)*activite + (w.P/sum)*prox);
-  var besoin = Math.round(0.70*fit + 0.30*pratique);
+  var besoin = Math.round(0.65*fit + 0.35*pratique);
 
   var why = {
-    besoin: "Pertinence "+besoin+"/100 = 70 % spécialité réellement exercée aujourd’hui (« "+(p.sous||"—")+" ») + 30 % pratique publiée. Les diplômes listés n’augmentent pas cette note.",
-    fiab: "Pratique "+qualite+"/100 : HAS/pratiques "+pratique+"/100"+(p.hasDate?" (accréditation "+p.hasDate+")":" (pas d’accréditation HAS = on ne peut pas affirmer de bonnes pratiques)")+" · titres (plafond) "+titres+"/100 · activité "+activite+"/100 · proximité "+prox+"/100. "+qb.reasons.join(" · ")+". Ce n’est pas un score clinique (pas de volume opératoire ni d’avis patients officiels).",
-    data: "Fiabilité des données "+data+"/100 : richesse des sources seulement, pas la qualité du geste."
+    besoin: "Pertinence "+besoin+"/100 : spécialité exercée aujourd’hui (« "+(p.sous||"—")+" ») + pratique publiée. Un surplus de DU n’augmente pas cette note.",
+    fiab: "Pratique "+qualite+"/100 = HAS "+(p.hasDate||"absente")+" · "+ev.label+" ("+ev.n+") · titres utiles "+titres+" · "+pubNote+". Les publications sont un signal d’activité scientifique, pas un taux de réussite opératoire.",
+    data: "Fiabilité des données "+data+"/100 : richesse des sources seulement."
   };
   return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:pratique, exp:pratique, signaux:activite, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
 }
@@ -503,6 +553,8 @@ function ficheV(){
         (p.diplomes&&p.diplomes.length?'<p>'+p.diplomes.map(esc).join("<br>")+'</p>':'<p class="muted">Diplômes : chargement ou non encore publiés pour ce RPPS.</p>')+
         (p.savoirFaire&&p.savoirFaire.length?'<p>'+p.savoirFaire.map(esc).join("<br>")+'</p>':'')+
         (p.hasDate?'<p>Certification HAS : '+esc(p.hasDate)+(p.oa?" · "+p.oa:"")+'</p>':'<p class="muted">Pas d’accréditation HAS listée.</p>')+
+        '<p>Environnement : '+esc(envScore(p).label)+'</p>'+
+        (p.impactLoaded?'<p>Publications HAL : '+(p.halN||0)+' · communications : '+(p.commN||0)+' · PubMed : '+(p.pmN||0)+(p.impactUncertain?' (homonyme possible, non compté dans la note)':'')+'</p>':'<p class="muted">Publications : recherche en cours ou non lancée.</p>')+
         '<p class="muted">'+(p.qualifsNote||"Les dates d’obtention de diplôme ne sont pas dans l’extraction publique.")+'</p></div>'+
       '<div class="row"><div class="metric"><b>'+esc(p.sous||SPEC[p.spec]||"—")+'</b><span class="muted">Savoir-faire</span></div><div class="metric"><b>'+esc(p.mode||"—")+'</b><span class="muted">Mode d’exercice</span></div></div>'+
       '<div class="row" style="margin-top:8px"><div class="card"><b class="fav">Points favorables</b>'+
@@ -529,6 +581,7 @@ function ficheV(){
       sourceBox("RPPS — tabular-api.data.gouv.fr", flattenObj(p.rawRpps), p.rawRpps?"":"Pas de ligne RPPS pour ce praticien.")+
       sourceBox("Diplômes RPPS — PS_LibreAcces_Dipl_AutExerc", p.rawDipl && p.rawDipl.length ? flattenObj(p.rawDipl) : [], p.qualifsNote||"Pas encore chargé.")+
       sourceBox("Savoir-faire RPPS — PS_LibreAcces_SavoirFaire", p.rawSf && p.rawSf.length ? flattenObj(p.rawSf) : [], "")+
+      sourceBox("HAL / PubMed", [["HAL",p.halN],["Communications HAL",p.commN],["PubMed",p.pmN],["Incertain homonyme",p.impactUncertain?"oui":"non"]], p.impactLoaded?"":"Pas encore interrogé.")+
       sourceBox("FHIR v2 — gateway.api.esante.gouv.fr", p.fhirRaw, p.fhirNote||(getFhirKey()?"":"Collez la clé ANS pour interroger Practitioner + PractitionerRole."));
   }
   return '<button type="button" class="back" data-act="results">Retour</button><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="muted">'+esc(p.sous||"")+' · '+esc(p.ville||"")+' · v'+VERSION+'</p>'+
@@ -557,7 +610,8 @@ function apis(){
     ["rpps","RPPS tabulaire data.gouv.fr","Identité, spécialité, commune, téléphone public.","https://tabular-api.data.gouv.fr/api/resources/"+RID_RPPS+"/data/?page_size=1"],
     ["has","HAS médecins accrédités","Accréditation officielle, spécialité, département.","https://tabular-api.data.gouv.fr/api/resources/"+RID_HAS+"/data/?page_size=1"],
     ["dipl","Diplômes RPPS (Dipl_AutExerc)","Type et libellé des diplômes / autorisations. Pas de date d’obtention dans le fichier public.","https://tabular-api.data.gouv.fr/api/resources/"+RID_DIPL+"/data/?page_size=1"],
-    ["savoir","Savoir-faire RPPS","Spécialités ordinales et compétences reconnues.","https://tabular-api.data.gouv.fr/api/resources/"+RID_SF+"/data/?page_size=1"],
+    ["hal","HAL archives ouvertes","Publications et communications scientifiques françaises, gratuit.","https://api.archives-ouvertes.fr/search/?q=*:*&rows=0&wt=json"],
+    ["pubmed","PubMed (NCBI)","Articles biomédicaux. Attention aux homonymes.","https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=surgery+France&retmax=0&retmode=json"],
     ["datagouv","Métadonnées Annuaire Santé","Jeu RPPS publié chaque jour.","https://www.data.gouv.fr/api/1/datasets/annuaire-sante-extractions-des-donnees-en-libre-acces-des-professionnels-intervenant-dans-le-systeme-de-sante-rpps/"],
     ["fhir","API FHIR Annuaire Santé ANS","L’ANS impose une clé Gravitee. Sans clé le serveur répond 403 : ce n’est pas un bug de l’app. Créez une clé sur portal.api.esante.gouv.fr puis collez-la ici.","https://gateway.api.esante.gouv.fr/fhir/v2/metadata"]
   ];
@@ -717,7 +771,7 @@ function openFiche(id){
   S.history.unshift({type:"FICHE", label:S.current.titre+" "+S.current.prenom+" "+S.current.nom, at:Date.now()});
   persist(); go("fiche", S.tab);
   var cur=S.current;
-  enrichQualifs(cur).then(function(){
+  enrichQualifs(cur).then(function(){ return enrichImpact(cur); }).then(function(){
     if (S.current===cur) { S.current.sc=scoreOf(S.current); render(); }
   });
 }
