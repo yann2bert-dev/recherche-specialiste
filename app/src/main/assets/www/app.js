@@ -1,12 +1,13 @@
 window.S = {
   tab:"home", screen:"home", ville:"", code:"", dept:"", lat:null, lon:null, rayon:25,
-  poids:{F:30,A:15,P:30,E:25},
+  poids:{F:35,A:10,P:15,E:40},
+  sort:"qualite", filtres:{has:false, tel:false, liberal:false, hopital:false},
   q:{zone:"",type:"",duree:"jours",alertes:[],texte:""},
   suggestions:[], spec:"chir_gen", results:[], current:null, detailTab:"synthese",
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.4.0";
+var VERSION = "1.5.0";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -96,8 +97,8 @@ function logo(){
   return '<div class="topbar"><img src="logo.png" alt="logo"/><div class="brand"><b>BY Innovation</b><span>Recherche de Spécialistes</span></div><div class="ver">v'+VERSION+'</div></div>';
 }
 function sliders(){
-  return '<div class="card"><b>Ce qui compte pour vous</b><p class="muted">Ces poids changent le classement.</p>'+
-    slider("F","Fiabilité professionnelle")+slider("A","Avis / signaux")+slider("P","Proximité")+slider("E","Ancienneté / suivi")+'</div>';
+  return '<div class="card"><b>Classer selon ce qui compte pour vous</b><p class="muted">Ces curseurs changent l’ordre, pas un avis médical.</p>'+
+    slider("E","Expérience / ancienneté")+slider("F","Compétences / formation")+slider("P","Proximité")+slider("A","Signaux d’exercice (lieux, libéral)")+'</div>';
 }
 function slider(k,l){
   return '<label>'+l+' · '+S.poids[k]+' %</label><input type="range" min="0" max="50" value="'+S.poids[k]+'" data-poids="'+k+'"/>';
@@ -224,66 +225,82 @@ function enrichFhir(list){
 function scoreOf(p){
   var wanted = fold(RPPS_SF[S.spec]||"");
   var sous = fold(p.sous||"");
-  var fit10 = 4;
-  if (p.spec===S.spec && sous.indexOf(wanted)>=0) fit10 = 9;
-  if (sous===wanted) fit10 = 10;
-  else if (sous.indexOf(wanted)>=0) fit10 = Math.max(fit10, 8);
-  else if (wanted && sous.indexOf(wanted.split(" ")[0])>=0) fit10 = Math.max(fit10, 6);
-  if (p.communeExact) fit10 = Math.min(10, fit10+1);
-
-  var F = 3;
-  if (p.rpps && String(p.rpps).length>=8) F += 2;
-  if (p.hasDate) {
-    F += 3;
-    var y = parseInt(String(p.hasDate).slice(0,4),10);
-    if (y>=2024) F += 2;
-    else if (y>=2022) F += 1;
-  }
-  if (p.oa) F += 0.5;
-  F = Math.min(10, F);
-
-  var A = 5;
-  if (p.hasDate) A += 1;
-  if ((p.sites||1)>1) A += Math.min(2, (p.sites-1)*0.7);
-  if (p.mode && fold(p.mode).indexOf("liberal")>=0) A += 0.4;
-  A = Math.min(10, A);
-
+  var titre = fold(p.titre||"");
+  var mode = fold(p.mode||"");
+  var struct = fold(p.structure||"");
+  var cat = fold(p.categorie||"");
   var deptOnly = String(p.ville||"").indexOf("Dép.")===0;
-  var prox = 5;
-  if (p.communeExact) prox = 10;
-  else if (!deptOnly && p.ville && fold(p.ville).indexOf(fold(S.ville))>=0) prox = 9;
-  else if (deptOnly) prox = 4;
+
+  var fit = 12;
+  if (sous===wanted) fit = 96;
+  else if (wanted && sous.indexOf(wanted)>=0) fit = 78;
+  else if (wanted && sous.indexOf(wanted.split(" ")[0])>=0) fit = 52;
+  else if (p.spec===S.spec) fit = 40;
+  if (p.communeExact) fit = Math.min(100, fit+4);
+
+  var comp = 8;
+  if (titre.indexOf("prof")>=0) comp += 28;
+  else if (titre.indexOf("dr")>=0 || titre.indexOf("doct")>=0) comp += 10;
+  if (p.hasDate) {
+    comp += 26;
+    var hy = parseInt(String(p.hasDate).slice(0,4),10);
+    if (hy>=2023) comp += 10;
+    else if (hy>=2018) comp += 6;
+  }
+  if (p.oa) comp += 4;
+  if (p.diplomes && p.diplomes.length) comp += Math.min(16, p.diplomes.length*4);
+  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) comp = Math.min(comp, 22);
+  comp = Math.max(0, Math.min(100, comp));
+
+  var years = null;
+  if (p.annee && p.annee>1950 && p.annee<2027) years = 2026-p.annee;
+  var exp = years==null ? 18 : Math.min(78, 8+years*2.4);
+  exp += Math.min(18, Math.max(0, ((p.sites||1)-1)*8));
+  if (p.hasDate) exp += 8;
+  if (struct.indexOf("chu")>=0 || struct.indexOf("universitaire")>=0) exp += 8;
+  else if (struct.indexOf("hopital")>=0 || struct.indexOf("hôpital")>=0) exp += 5;
+  else if (struct.indexOf("clinique")>=0) exp += 3;
+  if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) exp = Math.min(exp, 16);
+  exp = Math.max(0, Math.min(100, Math.round(exp)));
+
+  var signaux = 10;
+  if (mode.indexOf("liberal")>=0) signaux += 18;
+  if (mode.indexOf("salarie")>=0 || mode.indexOf("salarié")>=0) signaux += 8;
+  if (p.tel) signaux += 14;
+  if (p.email) signaux += 8;
+  if ((p.sites||1)>=2) signaux += 12;
+  if (p.fhirOk) signaux += 8;
+  signaux = Math.min(100, signaux);
+
+  var prox = 40;
+  if (p.communeExact) prox = 100;
+  else if (!deptOnly && p.ville && fold(p.ville).indexOf(fold(S.ville))>=0) prox = 86;
+  else if (deptOnly) prox = 28;
   if (S.lat!=null && p.realLat!=null) {
     var R=6371,dLat=(p.realLat-S.lat)*Math.PI/180,dLon=(p.realLon-S.lon)*Math.PI/180;
     var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(S.lat*Math.PI/180)*Math.cos(p.realLat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
     var distKm=2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-    prox = Math.max(0, 10*(1-distKm/Math.max(S.rayon,1)));
+    prox = Math.max(0, Math.round(100*(1-distKm/Math.max(S.rayon,1))));
     p._dist = Math.round(distKm*10)/10;
   }
-
-  var E = 4;
-  if (p.hasDate) {
-    var hy = parseInt(String(p.hasDate).slice(0,4),10);
-    if (hy) E = Math.min(10, 4 + Math.max(0, 2026-hy)*0.6);
-  }
-  if (p.annee) E = Math.min(10, (2026-p.annee)/3);
-  if ((p.sites||1)>=2) E = Math.min(10, E+1);
 
   var fields = ["rpps","tel","email","adresse","structure","finess","sous","mode","hasDate","ville"];
   var filled = 0;
   fields.forEach(function(k){ if (p[k] && String(p[k]).indexOf("Dép.")!==0) filled++; });
-  var data = Math.round(100 * filled / fields.length);
-  if (p.src && p.src.indexOf("RPPS")>=0 && p.src.indexOf("HAS")>=0) data = Math.min(100, data+8);
+  var data = Math.round(100*filled/fields.length);
+  if (p.fhirOk) data = Math.min(100, data+10);
+  if (p.rawHas) data = Math.min(100, data+6);
 
-  var w=S.poids, sum=w.F+w.A+w.P+w.E||1;
-  var fiab = Math.round(10*((w.F/sum)*F+(w.A/sum)*A+(w.P/sum)*prox+(w.E/sum)*E));
-  var besoin = Math.round(0.45*(fit10*10)+0.35*fiab+0.20*data);
+  var w=S.poids, sum=(w.F+w.E+w.P+w.A)||1;
+  var qualite = Math.round((w.F/sum)*comp + (w.E/sum)*exp + (w.A/sum)*signaux + (w.P/sum)*prox);
+  var besoin = Math.round(0.62*fit + 0.38*qualite);
+
   var why = {
-    besoin: "Pertinence "+besoin+"/100 = 45 % adéquation spécialité ("+fit10+"/10) + 35 % fiabilité pondérée ("+fiab+") + 20 % richesse des données ("+data+"). Spécialité demandée : "+(SPEC[S.spec]||S.spec)+". Libellé trouvé : "+(p.sous||"—")+".",
-    fiab: "Fiabilité "+fiab+"/100 avec vos poids Fiabilité "+w.F+" %, Avis "+w.A+" %, Proximité "+w.P+" %, Ancienneté "+w.E+" %. Notes /10 : F="+F.toFixed(1)+" (RPPS"+(p.hasDate?" + HAS "+p.hasDate:"")+") · A="+A.toFixed(1)+" (avis patients absents en open data = neutre 5) · P="+prox.toFixed(1)+" · E="+E.toFixed(1)+".",
-    data: "Données "+data+"/100 : "+filled+" champs remplis sur "+fields.length+" (RPPS, téléphone, e-mail, adresse, structure, FINESS, savoir-faire, mode, date HAS, commune). "+(p.src||"")+"."
+    besoin: "Pertinence "+besoin+"/100 = 62 % adéquation à la demande ("+fit+"/100, « "+(p.sous||"—")+" » vs « "+(SPEC[S.spec]||"")+" ») + 38 % qualité.",
+    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)")+" + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
+    data: "Fiabilité des données "+data+"/100 : "+filled+"/"+fields.length+" champs publics. Ce score ne juge pas le chirurgien, seulement la richesse des sources."
   };
-  return {fiab:fiab, besoin:besoin, data:data, dist:p._dist!=null?p._dist:(deptOnly?null:2), why:why, F:F, A:A, P:prox, E:E, fit10:fit10};
+  return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:comp, exp:exp, signaux:signaux, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
 }
 
 function home(){
@@ -345,24 +362,53 @@ function searchForm(){
     '<button type="button" class="btn primary" data-act="run">'+(S.busy?"Recherche…":"Lancer la recherche")+'</button>'+
     (S.busy?'<p class="muted">Interrogation RPPS + HAS en cours…</p>':'');
 }
+function ranked(){
+  var f=S.filtres||{};
+  var list=(S.results||[]).filter(function(p){
+    if (f.has && !p.hasDate) return false;
+    if (f.tel && !p.tel) return false;
+    if (f.liberal && fold(p.mode||"").indexOf("liberal")<0) return false;
+    if (f.hopital) {
+      var st=fold(p.structure||"");
+      if (st.indexOf("chu")<0 && st.indexOf("hopital")<0 && st.indexOf("hôpital")<0 && st.indexOf("universitaire")<0) return false;
+    }
+    return true;
+  });
+  list.forEach(function(p){ p.sc=scoreOf(p); });
+  var key=S.sort||"qualite";
+  list.sort(function(a,b){
+    var sa=a.sc, sb=b.sc;
+    if (key==="exp") return (sb.exp||0)-(sa.exp||0);
+    if (key==="besoin") return (sb.besoin||0)-(sa.besoin||0);
+    if (key==="data") return (sb.data||0)-(sa.data||0);
+    if (key==="prox") return (sb.prox||0)-(sa.prox||0);
+    return (sb.qualite||sb.fiab||0)-(sa.qualite||sa.fiab||0);
+  });
+  return list;
+}
 function resultsV(){
   if (S.busy) return '<h1>Recherche…</h1><p class="muted">Connexion aux sources officielles.</p>';
   if (!S.results.length) return '<button type="button" class="back" data-act="searchform">Modifier</button><div class="card"><h2>Aucun résultat</h2><p>Élargissez le rayon, changez de ville ou de spécialité.</p></div>';
-  return '<button type="button" class="back" data-act="searchform">Modifier</button><h1>'+esc(S.ville)+'</h1><p class="muted">'+S.results.length+' profils · '+esc(SPEC[S.spec]||"")+(S.srcNote?" · "+S.srcNote:"")+'</p>'+
-    S.results.map(cardMini).join("")+'<p class="disclaimer">Classement d’aide à la lecture des sources ouvertes. Pas un avis médical.</p>';
+  var list=ranked();
+  var sorts=[["qualite","Qualité"],["exp","Expérience"],["besoin","Pertinence"],["prox","Proximité"],["data","Données"]];
+  var filts=[["has","HAS seulement"],["tel","Téléphone public"],["liberal","Libéral"],["hopital","CHU / hôpital"]];
+  return '<button type="button" class="back" data-act="searchform">Modifier</button><h1>'+esc(S.ville)+'</h1><p class="muted">'+list.length+' / '+S.results.length+' profils · '+esc(SPEC[S.spec]||"")+(S.srcNote?" · "+S.srcNote:"")+'</p>'+
+    '<div class="chips">'+sorts.map(function(x){return '<button type="button" class="chip '+(S.sort===x[0]?"on":"")+'" data-act="sort" data-id="'+x[0]+'">'+x[1]+'</button>';}).join("")+'</div>'+
+    '<div class="chips">'+filts.map(function(x){return '<button type="button" class="chip '+(S.filtres[x[0]]?"on":"")+'" data-act="filtre" data-id="'+x[0]+'">'+x[1]+'</button>';}).join("")+'</div>'+
+    list.map(cardMini).join("")+'<p class="disclaimer">Classement d’aide à la lecture des sources ouvertes. Ce n’est pas un palmarès clinique ni un avis médical.</p>';
 }
 function whyBox(s){
   if (!s||!s.why) return "";
   return '<details class="why"><summary>Pourquoi cette note</summary>'+
     '<p><b>Pertinence '+s.besoin+'/100</b> — '+esc(s.why.besoin)+'</p>'+
-    '<p><b>Fiabilité '+s.fiab+'/100</b> — '+esc(s.why.fiab)+'</p>'+
+    '<p><b>Qualité '+s.fiab+'/100</b> — '+esc(s.why.fiab)+'</p>'+
     '<p><b>Données '+s.data+'/100</b> — '+esc(s.why.data)+'</p></details>';
 }
 function cardMini(p){
   var s=p.sc||scoreOf(p); p.sc=s;
   return '<div class="item"><div class="row"><h3 style="margin:0">'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h3><span class="muted">'+(s.dist!=null?s.dist+" km":esc(p.ville||""))+'</span></div>'+
     '<div class="muted">'+esc(p.sous||SPEC[p.spec]||"")+' · '+esc(p.ville||"")+'</div>'+
-    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Fiabilité</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div>'+
+    '<div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Qualité</span></div><div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Données</span></div></div>'+
     whyBox(s)+
     '<button type="button" class="btn soft" data-act="fiche" data-id="'+p.id+'">Voir la fiche</button></div>';
 }
@@ -376,8 +422,8 @@ function ficheV(){
   if (S.detailTab==="synthese") {
     body = photoBlock+'<p class="muted">'+ageLine+'</p>'+
       '<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100 ✓</b><span>Pertinence besoin · '+lecture(s.besoin)+'</span></div>'+
-      '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Fiabilité · '+lecture(s.fiab)+'</span></div>'+
-      '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Confiance dans les données</span></div></div>'+
+      '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Qualité (compétence + expérience) · '+lecture(s.fiab)+'</span></div>'+
+      '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Fiabilité des données seules</span></div></div>'+
       whyBox(s)+
       '<div class="row"><div class="metric"><b>'+esc(p.sous||SPEC[p.spec]||"—")+'</b><span class="muted">Savoir-faire</span></div><div class="metric"><b>'+esc(p.mode||"—")+'</b><span class="muted">Mode d’exercice</span></div></div>'+
       '<div class="row" style="margin-top:8px"><div class="card"><b class="fav">Points favorables</b>'+
@@ -690,6 +736,12 @@ document.addEventListener("click", function(e){
   }
   else if (act==="usespec") { S.spec=el.getAttribute("data-id"); go("searchform","search"); }
   else if (act==="run") runSearch();
+  else if (act==="sort") { S.sort=el.getAttribute("data-id"); render(); }
+  else if (act==="filtre") {
+    var fid=el.getAttribute("data-id");
+    S.filtres[fid]=!S.filtres[fid];
+    render();
+  }
   else if (act==="fiche") openFiche(el.getAttribute("data-id"));
   else if (act==="dtab") { S.detailTab=el.getAttribute("data-id"); render(); }
   else if (act==="replay-last") {
