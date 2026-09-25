@@ -1,0 +1,67 @@
+Tu es analyste fonctionnel senior spécialisé applications Android.
+Objectif : rédiger les SPÉCIFICATIONS D’ORIGINE (cahier des charges V1) de l’application « Recherche spécialiste ».
+Ce n’est PAS une demande de code ni d’APK. Livrable = document de spécifications.
+
+CONTEXTE
+Dossier : Mes applications
+Objectif déclaré : —
+
+EXPRESSION DE BESOIN
+je voudrais rechercher des spécialistes des chirurgiens des docteurs différents spécialistes dans le monde médical pour aider les gens à trouver les bons spécialistes qui correspondent à leurs problèmes donc on pourrait interroger via un symptôme un problème savoir quel spécialiste on doit parce que de temps en temps c'est des problèmes qu'on qu'on sait pas vers quelle spécialiste on doit se tourner donc du coup déjà aider ça ensuite trouver les bons spécialistes et trouver un moteur qui permet de trouver et identifier les spécialistes la fiabilité la rigueur plein de critères qui permettent de savoir si le PC c'est bon mais il faut trouver un moyen de trop de trouver d'évaluer tous les spécialistes peut-être selon leur diplôme peut-être selon leur recommandations qu'on trouve sur différents sites, les avis, certification, formation, webmaster, conférences, avis collègues, patients....
+
+SAISIE / RÉFLEXION À INTÉGRER
+Expression de besoin de « Recherche spécialiste »
+
+je voudrais rechercher des spécialistes des chirurgiens des docteurs différents spécialistes dans le monde médical pour aider les gens à trouver les bons spécialistes qui correspondent à leurs problèmes donc on pourrait interroger via un symptôme un problème savoir quel spécialiste on doit parce que de temps en temps c'est des problèmes qu'on qu'on sait pas vers quelle spécialiste on doit se tourner donc du coup déjà aider ça ensuite trouver les bons spécialistes et trouver un moteur qui permet de trouver et identifier les spécialistes la fiabilité la rigueur plein de critères qui permettent de savoir si le PC c'est bon mais il faut trouver un moyen de trop de trouver d'évaluer tous les spécialistes peut-être selon leur diplôme peut-être selon leur recommandations qu'on trouve sur différents sites, les avis, certification, formation, webmaster, conférences, avis collègues, patients....
+
+—— Dialogue IA locale pour approfondir l’EB ——
+
+Q1. Qui est l’utilisateur principal et dans quelle situation ouvre-t-il « Recherche spécialiste » ?
+R. quelqu'un qui veut consulter un spécialiste qui cherche un bon spécialiste et qui a peur de tomber sur des spécialistes ou des chirurgiens qui vont faire des conneries pour que son symptôme disparaisse une fois pour toute
+
+Q2. Quel problème concret cette application doit-elle résoudre en priorité ?
+R. déjà trouvé le bon spécialiste qui correspondent aux symptômes ou au choix désiré par l'utilisateur et ensuite rechercher plein de spécialistes différents et évaluer chacun des spécialistes et lui proposer que les spécialistes les mieux notés dans mon application selon un bon nombre de critères de fiabilité de rigueur de professionnalisme et de réussite dans ces des missions par exemple si c'est un chirurgien la réussite du cœur et cetera et cetera
+
+Q3. Quelles actions l’utilisateur doit pouvoir faire dès le premier écran ?
+R. décrire ces symptômes ou choisir à quel type de spécialiste et recherche dans le secteur qui veut géographique
+
+Q4. Quelles informations doivent être saisies, consultées ou historisées ?
+R. on doit avoir le récapitulatif de tous les spécialistes selon les critères éventuellement qu'on aurait défini par l'utilisateur si on peut lui laisser également des critères au choix qui a eu plus d'importance pour lui la proximité ou l'âge où je ne sais quel autre critère qui pourrait lui choisir l'application va proposer à sa notation mais l'utilisateur peut également choisir selon ses critères. Historique :ces choix et les spécialistes recherché,...
+
+Q5. Quels écrans sont indispensables en V1, et lesquels peuvent attendre ?
+R. tout ce que je viens d'écrire plus peut-être un onglet de connexion plus plus tous les appels à API nécessaire qui sont gratuits libre d'utilisation
+
+Q6. Faut-il un compte, un mode hors-ligne, des notifications ou un partage ?
+R. oui on peut travailler en mode hors connexion c'est possible et le partage d'un spécialiste vers quelqu'un d'autre et également possible pour recommander quelqu'un qu'on aurait retrouvé retrouver dans l'application
+
+Q7. À quoi reconnaît-on que l’application a réussi sa mission ?
+R. si l'application a réussi à avoir beaucoup d'adhérents dans comme nombre d'utilisateurs que les spécialistes aussi renseigne leur information dans l'application et que ça soit vraiment quelque chose qui marche bien pour tout le monde
+
+FONCTIONS DE BASE RETENUES
+- Navigation principale / A — Barre inférieure (Accueil, Recherche, Synthèse, Historique, Profil) : A — Barre inférieure (Accueil, Recherche, Synthèse, Historique, Profil)
+- Écran d’accueil / A — Accueil minimal : A — Accueil minimal
+- Historique / A — Chronologique : A — Chronologique
+- Profil utilisateur / A — Profil minimal : A — Profil minimal
+- Erreurs et états vides / A — Vide + erreur + chargement + hors ligne + succès (recommandé) : A — Vide + erreur + chargement + hors ligne + succès (recommandé)
+
+STRUCTURE OBLIGATOIRE DU LIVRABLE
+1. Contexte et périmètre V1 (ce qui est IN / OUT).
+2. Objectifs mesurables (fonctionnels, métier).
+3. Utilisateurs et contextes d’usage.
+4. Exigences fonctionnelles priorisées (MoSCoW : Must / Should / Could / Won’t).
+5. Parcours utilisateur principaux (pas à pas).
+6. Arborescence des écrans et navigation.
+7. Pour chaque écran : but, champs, boutons, états vides/erreur/chargement, règles.
+8. Données persistées, stockage local, permissions Android.
+9. Authentification / notifications / synchro : seulement si vraiment utiles en V1.
+10. Non-fonctionnel : performance perçue, hors-ligne, accessibilité, mode sombre si retenu.
+11. Critères d’acceptation testables.
+12. Hors périmètre explicite.
+
+Règles : ne jamais inventer une fonction non demandée. Privilégier simplicité, cohérence, utilité. Assez précis pour qu’une IA de développement produise ensuite un APK sans interprétation.
+SPÉCIFICATIONS D’ORIGINE ENREGISTRÉES
+(aucune)
+
+SPÉCIFICATIONS DE MODIFICATION ENREGISTRÉES
+(aucune)
+

@@ -1,0 +1,12 @@
+Transfert complet — Recherche de Spécialistes (BY Innovation)
+25 septembre 2026
+
+Ouvrir en premier : HISTORIQUE-conversation.md
+
+- sources/recherche-specialiste/  code Android (dernier état)
+- apk/Recherche-specialiste-V1.apk  APK debug à installer (désinstaller l'ancienne version)
+- docs/  cahier des charges, catalogue démo, table d'orientation, besoin initial
+- captures/  références visuelles et bugs constatés
+
+Build : Android SDK, minSdk 26, ./gradlew :app:assembleDebug
+FHIR ANS : 403 sans clé. La recherche live utilise geo.api.gouv.fr + data.gouv tabulaire (RPPS + HAS).

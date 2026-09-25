@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<title>Recherche de Spécialistes</title>
+<style>
+:root{--bg:#E8F3FB;--card:#fff;--ink:#12314A;--muted:#5A7184;--line:#D5E4EF;--blue:#1565C0;--blue2:#0D47A1;--green:#1B7A4E;--greenBg:#E6F6EE;--orange:#9A6B12;--orangeBg:#F8F1D6;--red:#9B2C2C;--redBg:#FDECEC}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.app{min-height:100vh;padding:12px 14px 96px}
+.logo-wrap{text-align:center;padding:8px 0 4px}
+.logo-wrap img{width:112px;height:112px;border-radius:24px;box-shadow:0 8px 24px rgba(13,71,161,.25)}
+.brand{text-align:center;font-weight:800;font-size:18px;margin:6px 0 2px;color:var(--blue2)}
+.sub{text-align:center;color:var(--muted);font-size:13px;margin:0 0 12px}
+h1{font-size:22px;margin:8px 0 6px}
+.muted{color:var(--muted);font-size:13px;line-height:1.4}
+.card{background:#fff;border-radius:16px;padding:14px;margin:10px 0;border:1px solid var(--line)}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:13px;font-size:15px;font-weight:700;margin:8px 0}
+.primary{background:linear-gradient(180deg,#1E88E5,#1565C0);color:#fff}
+.ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+.soft{background:#E3F2FD;color:var(--blue2)}
+input,select{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:15px;margin:6px 0;background:#fff}
+label{font-size:12px;color:var(--muted);font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{border:1.5px solid var(--line);background:#fff;border-radius:99px;padding:8px 12px;font-size:13px}
+.chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.scores{display:flex;gap:8px}
+.score{flex:1;border-radius:14px;padding:10px;border:1.5px solid}
+.score b{display:block;font-size:18px}
+.score span{font-size:11px;color:var(--muted)}
+.ok{background:var(--greenBg);border-color:#B7E3C9;color:var(--green)}
+.warn{background:var(--orangeBg);border-color:#E6D39A;color:var(--orange)}
+.bad{background:var(--redBg);border-color:#F0B7B7;color:var(--red)}
+.item{background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px;margin:8px 0}
+.tabs{display:flex;gap:12px;border-bottom:1px solid var(--line);overflow:auto}
+.tabs a{padding:10px 2px;color:var(--muted);font-weight:700;text-decoration:none;white-space:nowrap}
+.tabs a.on{color:var(--blue);border-bottom:3px solid var(--blue)}
+.nav{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px 14px}
+.nav button{border:0;background:0;font-size:10px;color:#6a7780}
+.nav button.on{color:var(--blue);font-weight:800}
+.ico{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;margin:0 auto 3px;color:#fff;font-size:13px}
+.back{border:0;background:#E3F2FD;border-radius:10px;padding:7px 10px;font-weight:700}
+.banner{background:#FFF6D8;border:1px solid #E6D39A;color:#7A5B10;border-radius:12px;padding:10px;font-size:13px;margin:8px 0}
+.alert{background:var(--redBg);border:1px solid #F0B7B7;color:var(--red);border-radius:12px;padding:10px;font-size:13px}
+.okb{background:var(--greenBg);border:1px solid #B7E3C9;color:var(--green);border-radius:12px;padding:10px;font-size:13px}
+.disclaimer{font-size:11px;color:#7A8790;margin-top:10px}
+.row{display:flex;gap:8px}.row>div{flex:1}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.status{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
+.onair{background:var(--greenBg);color:var(--green)}
+.offair{background:#eee;color:#666}
+.err{background:var(--redBg);color:var(--red)}
+.bar{height:8px;background:#eef2f4;border-radius:99px;overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:var(--blue)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="logo-wrap"><img src="logo.png" alt="logo"/></div>
+  <div class="brand">BY INNOVATION</div>
+  <p class="sub">Recherche de Spécialistes</p>
+  <p class="muted" style="text-align:center">Chargement de l’interface…</p>
+</div>
+<nav class="nav" id="nav"></nav>
+<script>
+(function(){
+function fold(s){return String(s||"").toLowerCase().replace(/[àáâä]/g,"a").replace(/[èéêë]/g,"e").replace(/[ìíîï]/g,"i").replace(/[òóôö]/g,"o").replace(/[ùúûü]/g,"u").replace(/ç/g,"c");}
+function esc(s){return String(s||"").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">");}
+var SPECIALITES={cardio:"Cardiologie",chir_cardio:"Chirurgie cardiaque",chir_gen:"Chirurgie générale",chir_vasc:"Chirurgie vasculaire",dermato:"Dermatologie",gastro:"Gastro-entérologie",gyneco:"Gynécologie-obstétrique",neuro:"Neurologie",chir_ortho:"Chirurgie orthopédique",ophtalmo:"Ophtalmologie",orl:"ORL",pneumo:"Pneumologie",psy:"Psychiatrie",rhumato:"Rhumatologie",uro:"Urologie",endocrino:"Endocrinologie",nephro:"Néphrologie",pediatrie:"Pédiatrie",med_gen:"Médecine générale"};
+var VILLES=[{nom:"Aix-en-Provence",lat:43.5297,lon:5.4474},{nom:"Paris",lat:48.8566,lon:2.3522},{nom:"Lyon",lat:45.764,lon:4.8357},{nom:"Marseille",lat:43.2965,lon:5.3698},{nom:"Lille",lat:50.6292,lon:3.0573},{nom:"Toulouse",lat:43.6047,lon:1.4442},{nom:"Nantes",lat:47.2184,lon:-1.5536},{nom:"Bordeaux",lat:44.8378,lon:-0.5792},{nom:"Nice",lat:43.7102,lon:7.262},{nom:"Grenoble",lat:45.1885,lon:5.7245}];
+var CATALOG=[
+ {id:"ax-seb",titre:"Dr",nom:"Sebbag",prenom:"Hugues",specialiteId:"chir_gen",sous:"Chirurgie viscérale et digestive",ville:"Aix-en-Provence",cp:"13080",lat:43.5265,lon:5.446,tel:"0442211211",annee:2001,diplomes:["Internat CHU Nancy","DU Endoscopie chirurgicale"],certifications:["Accréditation HAS viscéral-digestif"],formations:["PH CH Salon"],conferences:["AFC"],noteDip:8,noteCert:9,noteAvis:6,noteReco:8,noteConf:6,secteur:"2",optam:true,carteVitale:true,mode:"liberal",rpps:"10002358066",completude:100,fitTags:["chir_gen","dermato"]},
+ {id:"ax-mil",titre:"Dr",nom:"Miltgen",prenom:"Gilles",specialiteId:"chir_vasc",sous:"Chirurgie vasculaire",ville:"Aix-en-Provence",cp:"13090",lat:43.5344,lon:5.436,tel:"0442961981",annee:2000,diplomes:["CES Chirurgie générale","DU Chirurgie vasculaire"],certifications:["Accréditation HAS vasculaire"],formations:["AMU Marseille"],conferences:[],noteDip:7,noteCert:9,noteAvis:5,noteReco:5,noteConf:4,secteur:"2",optam:true,carteVitale:true,mode:"liberal",rpps:"10003358347",completude:86,fitTags:["chir_vasc"]},
+ {id:"ax-lin",titre:"Dr",nom:"Linzberger",prenom:"Nathalie",specialiteId:"chir_gen",sous:"Chirurgie générale et digestive",ville:"Aix-en-Provence",cp:"13616",lat:43.5278,lon:5.4452,tel:"0442335036",annee:2006,diplomes:["DES Chirurgie générale"],certifications:[],formations:["CH Pays d'Aix"],conferences:[],noteDip:7,noteCert:4,noteAvis:5,noteReco:6,noteConf:4,secteur:"1",optam:true,carteVitale:true,mode:"salarie",rpps:"demo-lin",completude:71,fitTags:["chir_gen"]},
+ {id:"ax-kha",titre:"Dr",nom:"Khalil",prenom:"Ange",specialiteId:"chir_gen",sous:"Chirurgie générale",ville:"Aix-en-Provence",cp:"13090",lat:43.5338,lon:5.4355,tel:"0442961981",annee:2010,diplomes:["DES Chirurgie générale"],certifications:[],formations:["Clinique Axium"],conferences:[],noteDip:6,noteCert:4,noteAvis:5,noteReco:5,noteConf:4,secteur:"2",optam:true,carteVitale:true,mode:"liberal",rpps:"demo-kha",completude:71,fitTags:["chir_gen"]},
+ {id:"ax-ang",titre:"Dr",nom:"Angot",prenom:"Cédric",specialiteId:"chir_gen",sous:"Chirurgie générale",ville:"Aix-en-Provence",cp:"13090",lat:43.5339,lon:5.4357,tel:"0442961981",annee:2012,diplomes:["DES Chirurgie générale"],certifications:[],formations:["Clinique Axium"],conferences:[],noteDip:6,noteCert:4,noteAvis:5,noteReco:5,noteConf:4,secteur:"2",optam:true,carteVitale:true,mode:"liberal",rpps:"demo-ang",completude:71,fitTags:["chir_gen"]},
+ {id:"ax-der",titre:"Dr",nom:"Moreau",prenom:"Inès",specialiteId:"dermato",sous:"Dermatologie",ville:"Aix-en-Provence",cp:"13100",lat:43.5289,lon:5.4498,tel:"0442271100",annee:2011,diplomes:["DES Dermatologie"],certifications:[],formations:["DU Chirurgie dermatologique"],conferences:["JDP"],noteDip:8,noteCert:4,noteAvis:8,noteReco:7,noteConf:6,secteur:"1",optam:true,carteVitale:true,mode:"liberal",rpps:"demo-der",completude:86,fitTags:["dermato"]},
+ {id:"ax-mg",titre:"Dr",nom:"Fabre",prenom:"Paul",specialiteId:"med_gen",sous:"Médecine générale",ville:"Aix-en-Provence",cp:"13100",lat:43.5301,lon:5.4481,tel:"0442260000",annee:2008,diplomes:["DES Médecine générale"],certifications:[],formations:[],conferences:[],noteDip:6,noteCert:4,noteAvis:8,noteReco:6,noteConf:3,secteur:"1",optam:true,carteVitale:true,mode:"liberal",rpps:"demo-mg",completude:71,fitTags:["med_gen","dermato"]},
+ {id:"sp-001",titre:"Pr",nom:"Morel",prenom:"Claire",specialiteId:"cardio",sous:"Rythmologie",ville:"Paris",cp:"75015",lat:48.8412,lon:2.2998,tel:"0145000001",annee:1998,diplomes:["DES Cardiologie"],certifications:["Accréditation HAS"],formations:["Pitié-Salpêtrière"],conferences:["ESC"],noteDip:9,noteCert:9,noteAvis:8,noteReco:9,noteConf:8,secteur:"1",optam:true,carteVitale:true,mode:"liberal",rpps:"10000000001",completude:100,fitTags:["cardio"]},
+ {id:"sp-007",titre:"Dr",nom:"El Amrani",prenom:"Sofia",specialiteId:"dermato",sous:"Dermatologie",ville:"Paris",cp:"75011",lat:48.858,lon:2.379,tel:"0145000007",annee:2014,diplomes:["DES Dermatologie"],certifications:[],formations:["DU"],conferences:["JDP"],noteDip:7,noteCert:4,noteAvis:8,noteReco:6,noteConf:6,secteur:"2",optam:true,carteVitale:true,mode:"liberal",rpps:"10000000007",completude:86,fitTags:["dermato"]},
+ {id:"sp-011",titre:"Dr",nom:"Diallo",prenom:"Amina",specialiteId:"pediatrie",sous:"Pédiatrie",ville:"Marseille",cp:"13008",lat:43.27,lon:5.383,tel:"0491000011",annee:2010,diplomes:["DES Pédiatrie"],certifications:[],formations:["DU Allergologie"],conferences:["SFP"],noteDip:8,noteCert:4,noteAvis:9,noteReco:8,noteConf:6,secteur:"1",optam:true,carteVitale:true,mode:"liberal",rpps:"10000000011",completude:86,fitTags:["pediatrie"]},
+ {id:"sp-004",titre:"Dr",nom:"Faure",prenom:"Julien",specialiteId:"cardio",sous:"Cardiologie",ville:"Lyon",cp:"69003",lat:45.76,lon:4.86,tel:"0478000004",annee:2005,diplomes:["DES Cardiologie"],certifications:["Accréditation HAS"],formations:["DU"],conferences:["SFC"],noteDip:8,noteCert:8,noteAvis:8,noteReco:8,noteConf:6,secteur:"1",optam:true,carteVitale:true,mode:"mixte",rpps:"10000000004",completude:100,fitTags:["cardio"]}
+];
+var QZONES=[{id:"peau",l:"Peau / boule / abcès"},{id:"dos",l:"Dos / articulations"},{id:"coeur",l:"Poitrine / cœur / souffle"},{id:"ventre",l:"Ventre / digestion"},{id:"tete",l:"Tête / yeux / oreilles"},{id:"urine",l:"Urines / gynéco"},{id:"moral",l:"Moral / fatigue générale"}];
+var QTYPES={peau:[{id:"abces",l:"Abcès, kyste, boule douloureuse"},{id:"eruption",l:"Éruption / démangeaison"}],dos:[{id:"abces",l:"Boule / abcès dans le dos"},{id:"douleur",l:"Douleur articulaire ou lombaire"}],coeur:[{id:"thorax",l:"Douleur thoracique"},{id:"palp",l:"Palpitations"},{id:"souffle",l:"Essoufflement / toux"}],ventre:[{id:"digest",l:"Troubles digestifs"},{id:"reflux",l:"Reflux / brûlures"}],tete:[{id:"migraine",l:"Maux de tête / vertiges"},{id:"vue",l:"Troubles visuels"},{id:"ouie",l:"Baisse d’audition"}],urine:[{id:"pipi",l:"Troubles urinaires"},{id:"cycle",l:"Troubles du cycle"}],moral:[{id:"anx",l:"Anxiété / moral"},{id:"fievre",l:"Fièvre prolongée"}]};
+var ORIENT={abces:[{id:"chir_gen",p:3,ph:"Un chirurgien généraliste draine souvent un abcès collecté."},{id:"dermato",p:3,ph:"Un dermatologue prend en charge un abcès ou kyste cutané."},{id:"med_gen",p:2,ph:"Un médecin généraliste est le premier recours."}],eruption:[{id:"dermato",p:3,ph:"Un dermatologue prend en charge les lésions de la peau."}],douleur:[{id:"rhumato",p:2,ph:"Un rhumatologue évalue une douleur articulaire."},{id:"chir_ortho",p:2,ph:"Un chirurgien orthopédiste si une opération est envisagée."}],thorax:[{id:"cardio",p:3,ph:"Un cardiologue évalue une douleur thoracique."}],palp:[{id:"cardio",p:3,ph:"Un cardiologue évalue les palpitations."}],souffle:[{id:"cardio",p:2,ph:"Cause cardiaque possible."},{id:"pneumo",p:2,ph:"Cause respiratoire possible."}],digest:[{id:"gastro",p:3,ph:"Un gastro-entérologue prend en charge les troubles digestifs."}],reflux:[{id:"gastro",p:3,ph:"Un gastro-entérologue évalue un reflux."}],migraine:[{id:"neuro",p:3,ph:"Un neurologue évalue des maux de tête persistants."}],vue:[{id:"ophtalmo",p:3,ph:"Un ophtalmologue prend en charge la vision."}],ouie:[{id:"orl",p:3,ph:"Un ORL évalue l’audition."}],pipi:[{id:"uro",p:3,ph:"Un urologue prend en charge les troubles urinaires."}],cycle:[{id:"gyneco",p:3,ph:"Un gynécologue évalue les troubles du cycle."}],anx:[{id:"psy",p:3,ph:"Un psychiatre prend en charge l’anxiété."},{id:"med_gen",p:1,ph:"Le généraliste est souvent le premier recours."}],fievre:[{id:"med_gen",p:3,ph:"Un médecin généraliste est le premier recours."}]};
+
+function loadApi(){
+  try{return JSON.parse(localStorage.getItem("rs_api")||"{}");}catch(e){return {};}
+}
+function saveApi(a){localStorage.setItem("rs_api",JSON.stringify(a));}
+var APIDEF=[
+  {id:"local",name:"Catalogue local",desc:"Base embarquée, toujours disponible hors-ligne.",url:"local://catalogue",free:true},
+  {id:"nominatim",name:"Géocodage OSM Nominatim",desc:"Convertit une ville en coordonnées. Gratuit, usage raisonnable.",url:"https://nominatim.openstreetmap.org/search?q=Aix-en-Provence&format=json&limit=1",free:true},
+  {id:"has",name:"HAS — médecins accrédités",desc:"Liste ouverte des médecins accrédités.",url:"https://accreditation-des-medecins.fr/siam/api/v1/medecins",free:true},
+  {id:"datagouv",name:"data.gouv.fr Annuaire Santé",desc:"Métadonnées du jeu RPPS en licence ouverte.",url:"https://www.data.gouv.fr/api/1/datasets/annuaire-sante-extractions-des-donnees-en-libre-acces-des-professionnels-intervenant-dans-le-systeme-de-sante-rpps/",free:true},
+  {id:"fhir",name:"API FHIR Annuaire Santé (ANS)",desc:"Identité, diplômes, lieux. Clé gratuite à créer sur le portail ANS.",url:"https://gateway.api.esante.gouv.fr/fhir/v2/metadata",free:true,needKey:true}
+];
+
+var S={tab:"home",screen:"home",ville:"",rayon:25,poids:{F:25,A:25,P:25,E:25},q:{zone:"",type:"",duree:"",alertes:[]},suggestions:[],spec:"",results:[],current:null,detailTab:"synthese",history:[],pins:[],profil:{prenom:"",ville:"",rayon:25},lastSearch:null,apiTests:{}};
+try{S.history=JSON.parse(localStorage.getItem("rs_hist")||"[]");}catch(e){}
+try{S.pins=JSON.parse(localStorage.getItem("rs_pins")||"[]");}catch(e){}
+try{S.profil=JSON.parse(localStorage.getItem("rs_profil")||'{"prenom":"","ville":"","rayon":25}');}catch(e){}
+function persist(){localStorage.setItem("rs_hist",JSON.stringify(S.history.slice(0,50)));localStorage.setItem("rs_pins",JSON.stringify(S.pins.slice(0,2)));localStorage.setItem("rs_profil",JSON.stringify(S.profil));}
+
+function villeObj(nom){
+  var n=fold(nom);
+  for(var i=0;i<VILLES.length;i++){if(fold(VILLES[i].nom).indexOf(n)>=0) return VILLES[i];}
+  return null;
+}
+function hav(a,b){var R=6371,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lon-a.lon)*Math.PI/180;var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+function cls(n){return n>=75?"ok":n>=55?"warn":"bad";}
+function lecture(n){return n>=75?"lecture favorable":n>=55?"lecture prudente":"vigilance";}
+function avg(arr){var x=[],i;for(i=0;i<arr.length;i++) if(arr[i]!=null) x.push(arr[i]); return x.length?x.reduce(function(a,b){return a+b;},0)/x.length:5;}
+function scoreOf(p,origin){
+  var dist=null;
+  if(origin&&p.lat) dist=hav(origin,p);
+  else if(fold(p.ville)===fold(S.ville)) dist=2;
+  var prox=dist==null?5:Math.max(0,10*(1-dist/S.rayon));
+  var years=p.annee?Math.min(10,(new Date().getFullYear()-p.annee)/3):5;
+  var F=avg([p.noteDip,p.noteCert,p.noteConf]);
+  var A=avg([p.noteAvis,p.noteReco]);
+  var w=S.poids,sum=w.F+w.A+w.P+w.E||1;
+  var fiab=Math.round(10*((w.F/sum)*F+(w.A/sum)*A+(w.P/sum)*prox+(w.E/sum)*years));
+  var fit=(!S.spec)?0.7:(p.specialiteId===S.spec?0.9:((p.fitTags||[]).indexOf(S.spec)>=0?0.75:0.35));
+  return {fiab:fiab,fit:Math.round(fit*10),besoin:Math.round(0.6*fiab+0.4*fit*10),dist:dist==null?null:Math.round(dist),prox:Math.round(prox*10),completude:p.completude};
+}
+
+window.goBack=function(){
+  if(S.screen==="home") return "no";
+  if(S.screen==="fiche"){S.screen=S.results.length?"results":"home";render();return "yes";}
+  if(S.screen==="results"||S.screen==="orient"){S.screen="searchform";render();return "yes";}
+  if(S.screen==="quiz2"){S.screen="quiz1";render();return "yes";}
+  if(S.screen==="quiz3"){S.screen="quiz2";render();return "yes";}
+  if(S.screen==="quiz1"||S.screen==="searchform"||S.screen==="apis"){S.screen="home";S.tab="home";render();return "yes";}
+  S.screen="home";S.tab="home";render();return "yes";
+};
+
+function go(sc,tab){S.screen=sc;if(tab) S.tab=tab;render();}
+function openTab(id){
+  S.tab=id;
+  S.screen=id==="home"?"home":id==="search"?"searchform":id==="synth"?"synth":id==="hist"?"hist":"profil";
+  render();
+}
+function nav(){
+  var items=[["home","Accueil","🏠","#1565C0"],["search","Recherche","🔎","#0277BD"],["synth","Synthèse","▣","#2E7D32"],["hist","Historique","🕘","#EF6C00"],["profil","Profil","👤","#6A1B9A"]];
+  var h="";
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    h+='<button class="'+(S.tab===it[0]?"on":"")+'" onclick="openTab(\''+it[0]+'\')"><div class="ico" style="background:'+it[3]+'">'+it[2]+'</div>'+it[1]+'</button>';
+  }
+  return h;
+}
+function headerLogo(small){
+  return '<div class="logo-wrap"><img src="logo.png" alt="BY Innovation" style="'+(small?"width:72px;height:72px;border-radius:16px":"")+'"/></div><div class="brand">BY INNOVATION</div><p class="sub">Recherche de Spécialistes</p>';
+}
+
+function home(){
+  return headerLogo(false)+
+    '<h1>Quel spécialiste chercher ?</h1>'+
+    '<p class="muted">3 questions maximum, puis un classement clair.</p>'+
+    '<div class="card"><label>Ville</label><input id="ville" value="'+esc(S.ville||S.profil.ville||"")+'" placeholder="Ex. Aix-en-Provence" oninput="S.ville=this.value"/>'+
+    '<div class="chips">'+VILLES.slice(0,6).map(function(v){return '<button class="chip '+(S.ville===v.nom?"on":"")+'" onclick="S.ville=\''+v.nom+'\';render()">'+v.nom+'</button>';}).join("")+'</div></div>'+
+    '<button class="btn primary" onclick="S.q={zone:\'\',type:\'\',duree:\'\',alertes:[]};go(\'quiz1\',\'home\')">Décrire un symptôme</button>'+
+    '<button class="btn ghost" onclick="go(\'searchform\',\'search\')">Choisir une spécialité</button>'+
+    '<button class="btn soft" onclick="go(\'apis\',\'profil\')">Sources & API — connecter / tester</button>'+
+    (S.history[0]?'<div class="card"><div class="muted">Dernière recherche</div><b>'+esc(S.history[0].label)+'</b><button class="btn soft" onclick="replay(0)">Reprendre</button></div>':'')+
+    '<p class="disclaimer">Aide à l’orientation, pas un diagnostic. Urgence : 15.</p>';
+}
+function quiz1(){
+  return '<button class="back" onclick="go(\'home\',\'home\')">Retour</button><p class="muted">Étape 1 / 3</p><h1>Où se situe le problème ?</h1>'+
+    QZONES.map(function(z){return '<button class="btn '+(S.q.zone===z.id?"primary":"ghost")+'" onclick="S.q.zone=\''+z.id+'\';go(\'quiz2\')">'+z.l+'</button>';}).join("");
+}
+function quiz2(){
+  var list=QTYPES[S.q.zone]||[];
+  return '<button class="back" onclick="go(\'quiz1\')">Retour</button><p class="muted">Étape 2 / 3</p><h1>Quel est le problème exact ?</h1>'+
+    list.map(function(t){return '<button class="btn '+(S.q.type===t.id?"primary":"ghost")+'" onclick="S.q.type=\''+t.id+'\';go(\'quiz3\')">'+t.l+'</button>';}).join("");
+}
+function quiz3(){
+  var durs=[["48h","Moins de 48 heures"],["jours","Quelques jours"],["sem","Plus de 2 semaines"]];
+  var al=[["fievre","Fièvre"],["douleur","Douleur violente"],["etend","Rougeur qui s’étend"],["aucun","Aucun de ces signes"]];
+  return '<button class="back" onclick="go(\'quiz2\')">Retour</button><p class="muted">Étape 3 / 3</p><h1>Durée et signes d’alerte</h1>'+
+    '<label>Durée</label><select onchange="S.q.duree=this.value">'+durs.map(function(d){return '<option value="'+d[0]+'" '+(S.q.duree===d[0]?"selected":"")+'>'+d[1]+'</option>';}).join("")+'</select>'+
+    '<div class="chips">'+al.map(function(a){return '<button class="chip '+(S.q.alertes.indexOf(a[0])>=0?"on":"")+'" onclick="toggleAl(\''+a[0]+'\')">'+a[1]+'</button>';}).join("")+'</div>'+
+    '<button class="btn primary" onclick="orient()">Voir les spécialités</button>';
+}
+window.toggleAl=function(id){
+  if(id==="aucun"){ S.q.alertes=["aucun"]; render(); return; }
+  var next=[], seen=false;
+  for(var i=0;i<S.q.alertes.length;i++){
+    if(S.q.alertes[i]==="aucun") continue;
+    if(S.q.alertes[i]===id){ seen=true; continue; }
+    next.push(S.q.alertes[i]);
+  }
+  if(!seen) next.push(id);
+  S.q.alertes=next;
+  render();
+};
+function orient(){
+  var raw=ORIENT[S.q.type]||[{id:"med_gen",p:1,ph:"Un médecin généraliste peut faire le premier point."}];
+  S.suggestions=raw.slice().sort(function(a,b){return b.p-a.p;}).slice(0,3);
+  S.spec=S.suggestions[0].id;
+  go("orient");
+}
+function orientView(){
+  var urgent=S.q.alertes.some(function(a){return a!=="aucun";});
+  return '<button class="back" onclick="go(\'quiz3\')">Retour</button><h1>Spécialistes suggérés</h1>'+
+    (urgent?'<div class="alert">Signe d’alerte coché. Si fièvre, douleur forte ou rougeur qui s’étend : 15 ou urgences.</div>':'')+
+    S.suggestions.map(function(s){return '<div class="item"><h3>'+SPECIALITES[s.id]+'</h3><p class="muted">'+s.ph+'</p><button class="btn primary" onclick="S.spec=\''+s.id+'\';go(\'searchform\',\'search\')">Rechercher</button></div>';}).join("")+
+    '<button class="btn ghost" onclick="go(\'searchform\',\'search\')">Autre spécialité</button>';
+}
+function slider(k,l){return '<label>'+l+' · '+S.poids[k]+'%</label><input type="range" min="0" max="50" value="'+S.poids[k]+'" oninput="S.poids.'+k+'=+this.value;render()"/>';}
+function searchForm(){
+  var opts=""; for(var k in SPECIALITES) opts+='<option value="'+k+'" '+(S.spec===k?"selected":"")+'>'+SPECIALITES[k]+'</option>';
+  return '<h1>Recherche</h1><label>Spécialité</label><select onchange="S.spec=this.value">'+opts+'</select>'+
+    '<label>Ville</label><input value="'+esc(S.ville||S.profil.ville||"")+'" oninput="S.ville=this.value"/>'+
+    '<label>Rayon</label><select onchange="S.rayon=+this.value">'+[5,10,25,50,100].map(function(r){return '<option '+(S.rayon===r?"selected":"")+' value="'+r+'">'+r+' km</option>';}).join("")+'</select>'+
+    '<div class="card"><b>Ce qui compte pour vous</b>'+slider("F","Fiabilité")+slider("A","Avis")+slider("P","Proximité")+slider("E","Ancienneté")+'</div>'+
+    '<button class="btn primary" onclick="runSearch()">Rechercher</button>';
+}
+function runSearch(){
+  if(!S.spec) S.spec="chir_gen";
+  if(!S.ville){alert("Indiquez une ville.");return;}
+  var origin=villeObj(S.ville);
+  var list=[];
+  for(var i=0;i<CATALOG.length;i++){
+    var p=CATALOG[i];
+    var same=p.specialiteId===S.spec || (p.fitTags||[]).indexOf(S.spec)>=0;
+    var sc=scoreOf(p,origin);
+    var inR=sc.dist==null ? fold(p.ville).indexOf(fold(S.ville))>=0 : sc.dist<=S.rayon;
+    if(same && inR){p.sc=sc;list.push(p);}
+  }
+  list.sort(function(a,b){return b.sc.besoin-a.sc.besoin;});
+  S.results=list;
+  S.lastSearch={spec:S.spec,ville:S.ville,rayon:S.rayon,n:list.length,at:Date.now()};
+  S.history.unshift({type:"RECHERCHE",label:SPECIALITES[S.spec]+" · "+S.ville+" · "+S.rayon+" km",spec:S.spec,ville:S.ville,rayon:S.rayon,n:list.length,at:Date.now()});
+  persist(); go("results","search");
+}
+function cardMini(p){
+  var s=p.sc;
+  return '<div class="item" onclick="openFiche(\''+p.id+'\')"><div class="row"><h3 style="margin:0">'+p.titre+' '+p.prenom+' '+p.nom+'</h3><span class="muted">'+(s.dist!=null?s.dist+" km":p.ville)+'</span></div><div class="muted">'+(p.sous||SPECIALITES[p.specialiteId])+' · '+p.ville+'</div><div class="scores" style="margin-top:8px"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Fiabilité</span></div><div class="score '+cls(s.completude)+'"><b>'+s.completude+'%</b><span>Données</span></div></div></div>';
+}
+function resultsView(){
+  if(!S.results.length) return '<button class="back" onclick="go(\'searchform\')">Modifier</button><div class="card"><h2>Aucun résultat</h2><p>Élargissez le rayon ou changez de ville.</p></div>';
+  return '<button class="back" onclick="go(\'searchform\')">Modifier</button><h1>'+esc(S.ville)+' · '+S.rayon+' km</h1><p class="muted">'+S.results.length+' spécialistes · '+SPECIALITES[S.spec]+'</p>'+S.results.map(cardMini).join("")+'<p class="disclaimer">Score selon vos poids. Pas un classement officiel.</p>';
+}
+window.openFiche=function(id){
+  for(var i=0;i<CATALOG.length;i++) if(CATALOG[i].id===id) S.current=CATALOG[i];
+  S.current.sc=scoreOf(S.current,villeObj(S.ville||S.current.ville));
+  S.detailTab="synthese";
+  S.history.unshift({type:"FICHE",label:S.current.titre+" "+S.current.prenom+" "+S.current.nom,id:id,at:Date.now()});
+  persist(); go("fiche",S.tab);
+};
+function fiche(){
+  var p=S.current,s=p.sc;
+  var tabs=[["synthese","Synthèse"],["fiab","Fiabilité"],["acces","Accès"],["info","Informations"]];
+  var body="";
+  if(S.detailTab==="synthese"){
+    body='<div class="scores"><div class="score '+cls(s.besoin)+'"><b>'+s.besoin+'/100</b><span>Pertinence · '+lecture(s.besoin)+'</span></div><div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100</b><span>Fiabilité</span></div><div class="score '+cls(s.completude)+'"><b>'+s.completude+'/100</b><span>Confiance données</span></div></div>'+
+      '<div class="row"><div class="card"><b>Points favorables</b>'+(p.certifications[0]?'<p>✓ '+p.certifications[0]+'</p>':'')+'<p>✓ Identité documentée</p>'+(p.carteVitale?'<p>✓ Carte Vitale</p>':'')+'</div><div class="card"><b>Vigilance</b>'+(p.specialiteId!==S.spec?'<p>⚠ Sur-spécialité différente</p>':'')+(p.secteur==="2"?'<p>⚠ Secteur 2</p>':'')+(!p.certifications.length?'<p>⚠ HAS non listée</p>':'')+'</div></div>';
+  } else if(S.detailTab==="fiab"){
+    var rows=[["Diplômes",p.noteDip],["HAS / certif.",p.noteCert],["Avis",p.noteAvis],["Rôle",p.noteReco],["Travaux",p.noteConf]];
+    body=rows.map(function(r){return '<div class="card"><div class="row"><b>'+r[0]+'</b><span>'+r[1]+'/10</span></div><div class="bar"><i style="width:'+(r[1]*10)+'%"></i></div></div>';}).join("");
+  } else if(S.detailTab==="acces"){
+    body='<div class="card"><p>Secteur '+p.secteur+(p.optam?" · OPTAM":"")+'</p><p>'+(p.carteVitale?"Carte Vitale oui":"Carte Vitale non renseignée")+'</p><p>Mode : '+p.mode+'</p><p>Tél. : '+(p.tel||"Non renseigné")+'</p></div>';
+  } else {
+    body='<div class="card"><p>RPPS '+p.rpps+'</p><p>'+(p.diplomes.join(" · ")||"Non renseigné")+'</p><p>'+p.ville+" "+(p.cp||"")+'</p></div>';
+  }
+  return '<button class="back" onclick="go(S.results.length?\'results\':\'home\')">Retour</button><h1>'+p.titre+" "+p.prenom+" "+p.nom+'</h1><p class="muted">'+p.sous+" · "+p.ville+'</p>'+
+    '<div class="tabs">'+tabs.map(function(t){return '<a class="'+(S.detailTab===t[0]?"on":"")+'" href="#" onclick="S.detailTab=\''+t[0]+'\';render();return false">'+t[1]+'</a>';}).join("")+'</div>'+body+
+    '<div class="actions"><button class="btn ghost" onclick="callTel(\''+(p.tel||"")+'\')">Appeler</button><button class="btn ghost" onclick="itineraire(\''+p.ville+" "+(p.cp||"")+'\')">Itinéraire</button><button class="btn ghost" onclick="pin(\''+p.id+'\')">'+(S.pins.indexOf(p.id)>=0?"Désépingler":"Épingler")+'</button><button class="btn primary" onclick="shareFiche()">Partager</button></div>'+
+    '<p class="disclaimer">Pas un diagnostic. Urgence : 15.</p>';
+}
+function synth(){
+  if(!S.lastSearch) return '<div class="card"><h2>Pas encore de synthèse</h2><button class="btn primary" onclick="openTab(\'home\')">Accueil</button></div>';
+  var pins=S.pins.map(function(id){for(var i=0;i<CATALOG.length;i++) if(CATALOG[i].id===id) return CATALOG[i];}).filter(Boolean);
+  pins.forEach(function(p){p.sc=scoreOf(p,villeObj(S.ville||p.ville));});
+  return '<h1>Synthèse</h1><div class="card"><b>Dernière recherche</b><p>'+SPECIALITES[S.lastSearch.spec]+" · "+S.lastSearch.ville+" · "+S.lastSearch.rayon+" km</p></div>"+(S.results||[]).slice(0,3).map(cardMini).join("")+"<h2>Épinglés</h2>"+(pins.length?pins.map(cardMini).join(""):"<p class='muted'>Épinglez 2 fiches pour comparer.</p>");
+}
+function hist(){
+  if(!S.history.length) return '<div class="card"><h2>Historique vide</h2></div>';
+  return '<div class="row"><h1>Historique</h1><button class="back" onclick="S.history=[];persist();render()">Effacer</button></div>'+S.history.map(function(h,i){return '<div class="item" onclick="replay('+i+')"><b>'+(h.type==="FICHE"?"👤 ":"🔎 ")+esc(h.label)+'</b><div class="muted">'+new Date(h.at).toLocaleString("fr-FR")+'</div></div>';}).join("");
+}
+window.replay=function(i){var h=S.history[i]; if(h.type==="FICHE") openFiche(h.id); else {S.spec=h.spec;S.ville=h.ville;S.rayon=h.rayon;runSearch();}};
+function profil(){
+  return headerLogo(true)+'<h1>Profil</h1><label>Prénom</label><input value="'+esc(S.profil.prenom)+'" oninput="S.profil.prenom=this.value;persist()"/>'+
+    '<label>Ville favorite</label><input value="'+esc(S.profil.ville)+'" oninput="S.profil.ville=this.value;persist()"/>'+
+    '<button class="btn soft" onclick="go(\'apis\',\'profil\')">Sources & API</button>'+
+    '<div class="card"><b>Pondérations</b>'+slider("F","Fiabilité")+slider("A","Avis")+slider("P","Proximité")+slider("E","Ancienneté")+'</div>'+
+    '<p class="muted">Données uniquement sur cet appareil.</p>';
+}
+
+function httpGet(url, header){
+  return new Promise(function(resolve){
+    try{
+      if(window.Android && Android.httpGet){
+        var raw=Android.httpGet(url, header||"");
+        resolve(JSON.parse(raw));
+        return;
+      }
+    }catch(e){}
+    var ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+    var t=setTimeout(function(){if(ctrl) ctrl.abort();},8000);
+    fetch(url,{signal:ctrl?ctrl.signal:undefined,headers:{"Accept":"*/*"}}).then(function(r){
+      return r.text().then(function(t2){clearTimeout(t);resolve({ok:r.ok,status:r.status,body:t2.slice(0,4000)});});
+    }).catch(function(err){clearTimeout(t);resolve({ok:false,status:0,error:String(err)});});
+  });
+}
+
+function apisView(){
+  var cfg=loadApi();
+  var html=headerLogo(true)+'<button class="back" onclick="go(\'profil\',\'profil\')">Retour</button><h1>Sources & API</h1>'+
+    '<p class="muted">Activez une source, collez une clé si besoin, puis testez. Le catalogue local reste le filet de sécurité.</p>'+
+    '<div class="card"><label>Clé FHIR Annuaire Santé (optionnelle)</label><input id="fhirKey" value="'+esc(cfg.fhirKey||"")+'" placeholder="ESANTE-API-KEY" oninput="var c=loadApi();c.fhirKey=this.value;saveApi(c)"/></div>';
+  for(var i=0;i<APIDEF.length;i++){
+    var a=APIDEF[i];
+    var on=cfg[a.id]!==false;
+    var test=S.apiTests[a.id];
+    var badge=test?(test.ok?'<span class="status onair">OK '+test.status+'</span>':'<span class="status err">Échec</span>'):'<span class="status offair">Non testé</span>';
+    html+='<div class="card"><div class="row"><b>'+a.name+'</b>'+badge+'</div><p class="muted">'+a.desc+'</p>'+
+      '<label><input type="checkbox" '+(on?"checked":"")+' onchange="toggleSrc(\''+a.id+'\',this.checked)"/> Utiliser cette source</label>'+
+      '<button class="btn ghost" onclick="testApi(\''+a.id+'\')">Tester la connexion</button>'+
+      (test?'<p class="muted">'+(test.error||("HTTP "+test.status+" — "+(test.preview||"")))+'</p>':'')+
+      '</div>';
+  }
+  html+='<button class="btn primary" onclick="testAll()">Tout tester</button>';
+  return html;
+}
+window.toggleSrc=function(id,on){var c=loadApi();c[id]=on;saveApi(c);};
+window.testApi=function(id){
+  var a=null; for(var i=0;i<APIDEF.length;i++) if(APIDEF[i].id===id) a=APIDEF[i];
+  S.apiTests[id]={ok:false,status:0,preview:"test…"};
+  render();
+  if(id==="local"){S.apiTests[id]={ok:true,status:200,preview:CATALOG.length+" fiches locales"};render();return;}
+  var cfg=loadApi();
+  var header="";
+  if(id==="fhir" && cfg.fhirKey) header="ESANTE-API-KEY:"+cfg.fhirKey;
+  httpGet(a.url, header).then(function(res){
+    S.apiTests[id]={ok:!!res.ok,status:res.status||0,preview:(res.body||res.error||"").toString().slice(0,160),error:res.error};
+    render();
+  });
+};
+window.testAll=function(){for(var i=0;i<APIDEF.length;i++) testApi(APIDEF[i].id);};
+
+window.pin=function(id){if(S.pins.indexOf(id)>=0) S.pins=S.pins.filter(function(x){return x!==id;}); else {if(S.pins.length>=2) S.pins.shift(); S.pins.push(id);} persist();render();};
+window.shareFiche=function(){
+  var p=S.current,s=p.sc;
+  var t=p.titre+" "+p.nom+" — "+SPECIALITES[p.specialiteId]+" — "+p.ville+" — score "+s.besoin+"/100 selon Recherche spécialiste. Ceci n’est pas un avis médical.";
+  if(window.Android&&Android.share) Android.share(t); else if(navigator.share) navigator.share({text:t}); else alert(t);
+};
+window.callTel=function(tel){if(!tel){alert("Numéro non renseigné");return;} if(window.Android&&Android.call) Android.call(tel); else location.href="tel:"+tel;};
+window.itineraire=function(q){if(window.Android&&Android.maps) Android.maps(q); else window.open("https://maps.google.com/?q="+encodeURIComponent(q));};
+
+function render(){
+  try{
+    var map={home:home,quiz1:quiz1,quiz2:quiz2,quiz3:quiz3,orient:orientView,searchform:searchForm,results:resultsView,fiche:fiche,synth:synth,hist:hist,profil:profil,apis:apisView};
+    var fn=map[S.screen]||home;
+    document.getElementById("app").innerHTML=fn();
+    document.getElementById("nav").innerHTML=nav();
+  }catch(e){
+    document.getElementById("app").innerHTML=headerLogo(false)+'<div class="alert">Erreur d’affichage : '+esc(e.message)+'</div><button class="btn primary" onclick="S.screen=\'home\';render()">Réouvrir l’accueil</button>';
+  }
+}
+window.go=go; window.openTab=openTab; window.orient=orient; window.runSearch=runSearch; window.render=render;
+render();
+})();
+</script>
+</body>
+</html>

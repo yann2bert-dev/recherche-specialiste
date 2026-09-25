@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<title>Recherche de Spécialistes</title>
+<style>
+:root{--bg:#F3F6FA;--ink:#12233A;--muted:#5B6E80;--blue:#1558C0;--navy:#0E2A4A;--green:#1B7A4E;--gbg:#E7F6EE;--orange:#9A6B12;--obg:#F8F1D6;--red:#9B2C2C}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+#app{padding:12px 14px 100px;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.topbar img{width:42px;height:42px;border-radius:11px}
+.topbar b{display:block;font-size:14px}
+.topbar span{font-size:11px;color:var(--muted)}
+h1{font-size:22px;margin:6px 0 8px}
+.muted{color:var(--muted);font-size:13px;line-height:1.45}
+.card{background:#fff;border-radius:16px;padding:14px;margin:10px 0;border:1px solid #E1E8EF}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:14px;font-size:16px;font-weight:700;margin:8px 0}
+.primary{background:linear-gradient(180deg,#2B7DE9,#1558C0);color:#fff}
+.ghost{background:#fff;border:1.5px solid #D5DEE7;color:var(--ink)}
+.soft{background:#E3F0FF;color:#1558C0}
+input,select,textarea{width:100%;border:1.5px solid #D5DEE7;border-radius:12px;padding:12px;font-size:16px;margin:6px 0;background:#fff}
+label{font-size:12px;font-weight:700;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.chip{border:1.5px solid #D5DEE7;background:#fff;border-radius:999px;padding:10px 12px;font-size:14px}
+.chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.scores{display:flex;gap:8px}
+.score{flex:1;border-radius:14px;padding:10px;border:1.5px solid}
+.score b{display:block;font-size:18px}
+.score span{font-size:11px;color:var(--muted);display:block}
+.ok{background:var(--gbg);border-color:#B7E3C9;color:var(--green)}
+.warn{background:var(--obg);border-color:#E6D39A;color:var(--orange)}
+.bad{background:#FDECEC;border-color:#F0B7B7;color:var(--red)}
+.item{background:#fff;border:1px solid #E1E8EF;border-radius:16px;padding:12px;margin:8px 0}
+.nav{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #E1E8EF;display:flex;justify-content:space-around;padding:8px 4px 16px;z-index:20}
+.nav button{border:0;background:0;font-size:10px;color:#6a7780;min-width:56px}
+.nav button.on{color:var(--blue);font-weight:800}
+.ico{width:26px;height:26px;border-radius:8px;margin:0 auto 3px;display:grid;place-items:center;color:#fff}
+.back{border:0;background:#E3F0FF;border-radius:10px;padding:8px 12px;font-weight:700}
+.alert{background:#FDECEC;color:var(--red);border-radius:12px;padding:10px;font-size:13px;margin:8px 0}
+.banner{background:var(--obg);color:#7A5B10;border-radius:12px;padding:10px;font-size:13px;margin:8px 0}
+.okb{background:var(--gbg);color:var(--green);border-radius:12px;padding:10px;font-size:13px;margin:8px 0}
+.disclaimer{font-size:11px;color:#7A8790;margin-top:12px}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.tabs{display:flex;gap:14px;border-bottom:1px solid #E1E8EF;overflow:auto}
+.tabs a{padding:10px 2px;color:var(--muted);font-weight:700;text-decoration:none;white-space:nowrap}
+.tabs a.on{color:var(--blue);border-bottom:3px solid var(--blue)}
+.metric{background:#F6F8FB;border-radius:12px;padding:10px}
+.metric b{display:block;font-size:16px}
+.bar{height:8px;background:#eef2f4;border-radius:99px;overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:var(--blue)}
+.status{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
+.onair{background:var(--gbg);color:var(--green)}.err{background:#FDECEC;color:var(--red)}.offair{background:#eee;color:#666}
+#suggest{background:#fff;border:1px solid #D5DEE7;border-radius:12px;display:none;max-height:220px;overflow:auto}
+#suggest div{padding:12px;border-bottom:1px solid #eef2f4}
+.fav{color:var(--green);font-size:13px;margin:4px 0}
+.vig{color:var(--orange);font-size:13px;margin:4px 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar"><img src="logo.png" alt="logo"/><div><b>BY Innovation</b><span>Recherche de Spécialistes</span></div></div>
+  <p class="muted">Chargement de l’interface…</p>
+  <button class="btn primary" onclick="location.reload()">Réessayer</button>
+</div>
+<nav class="nav" id="nav"></nav>
+<script src="app.js"></script>
+</body>
+</html>
