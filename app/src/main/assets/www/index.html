@@ -86,14 +86,22 @@ label{font-size:12px;font-weight:700;color:var(--muted)}
 .onair{background:var(--gbg);color:var(--green)}.err{background:#FDECEC;color:var(--red)}.offair{background:#eee;color:#666}
 #suggest{background:#fff;border:1px solid #D5DEE7;border-radius:12px;display:none;max-height:220px;overflow:auto}
 #suggest div{padding:12px;border-bottom:1px solid #eef2f4}
-.fav{color:var(--green);font-size:13px;margin:4px 0}
+#modal{display:none;position:fixed;inset:0;z-index:40;background:rgba(14,42,74,.45);align-items:center;justify-content:center;padding:18px}
+#modal.on{display:flex}
+.sheet{background:#fffaf3;border-radius:22px;padding:18px;width:100%;max-width:420px;box-shadow:0 16px 40px rgba(0,0,0,.2)}
+.dots{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+.dots i{width:8px;height:8px;border-radius:99px;background:rgba(21,88,192,.25);display:block}
+.dots i.on{background:#1558C0}
+.sheet .stop{border:2px solid #9B2C2C;background:#fff;color:#9B2C2C;border-radius:14px;padding:12px;font-weight:800}
+.sheet .go{border:0;background:#1558C0;color:#fff;border-radius:14px;padding:12px;font-weight:800}
 .vig{color:var(--orange);font-size:13px;margin:4px 0}
+.fav{color:var(--green);font-size:13px;margin:4px 0}
 </style>
 </head>
 <body>
 <header class="apphead" id="head">
   <div class="headtitle"><span class="hbadge">S</span><b>Accueil</b></div>
-  <div class="headbrand"><img src="logo.png" alt="logo"/><div><b>Spécialistes</b><span>v1.6.0</span></div></div>
+  <div class="headbrand"><img src="logo.png" alt="logo"/><div><b>Spécialistes</b><span>v1.7.0</span></div></div>
 </header>
 <div id="app">
   <div class="topbar"><img src="logo.png" alt="logo"/><div><b>BY Innovation</b><span>Recherche de Spécialistes</span></div></div>
@@ -101,6 +109,7 @@ label{font-size:12px;font-weight:700;color:var(--muted)}
   <button class="btn primary" onclick="location.reload()">Réessayer</button>
 </div>
 <nav class="nav" id="nav"></nav>
+<div id="modal"></div>
 <script src="app.js"></script>
 <script>
 setTimeout(function(){

@@ -7,12 +7,14 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:"", avis:{}
 };
 var S = window.S;
-var VERSION = "1.6.0";
+var VERSION = "1.7.0";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
 try { S.avis = JSON.parse(localStorage.getItem("rs_avis")||"{}"); } catch(e) {}
 try { var pw=JSON.parse(localStorage.getItem("rs_poids")||"null"); if(pw&&pw.F!=null) S.poids=pw; } catch(e) {}
+try { S.extra = JSON.parse(localStorage.getItem("rs_villes")||"[]"); } catch(e) { S.extra=[]; }
+if (!Array.isArray(S.extra)) S.extra=[];
 
 var SPEC = {
   chir_gen:"Chirurgie générale / viscérale", chir_vasc:"Chirurgie vasculaire",
@@ -453,10 +455,11 @@ function home(){
     '<p class="disclaimer">Pas un dispositif médical. Urgences : 15 · 18 · 17 · 112 · SMS 114.</p>';
 }
 function villeBox(){
-  return '<div class="card"><label>Ville</label><input id="ville" value="'+esc(S.ville)+'" placeholder="Tapez une ville, ex. Aix-en-Provence" autocomplete="off"/>'+
-    '<div id="suggest"></div><div class="chips">'+VILLES.slice(0,6).map(function(v){
-      return '<button type="button" class="chip '+(S.ville===v[0]?"on":"")+'" data-act="setville" data-nom="'+v[0]+'" data-code="'+v[1]+'" data-dept="'+v[2]+'" data-lat="'+v[3]+'" data-lon="'+v[4]+'">'+v[0]+'</button>';
-    }).join("")+'</div>'+(S.ville?'<p class="muted">Sélection : <b>'+esc(S.ville)+'</b>'+(S.dept?' · dép. '+S.dept:'')+'</p>':'')+'</div>';
+  return '<div class="card"><label>Ville ou code postal</label><input id="ville" value="'+esc(S.ville)+'" placeholder="Ex. Aix-en-Provence ou 13100" autocomplete="off"/>'+
+    '<p class="muted">Confirmez une ligne de la liste : ville et code postal.</p>'+
+    '<div id="suggest"></div><div class="chips">'+villeChoices().map(function(v){
+      return '<button type="button" class="chip '+(S.code===v[1]?"on":"")+'" data-act="setville" data-nom="'+esc(v[0])+'" data-code="'+v[1]+'" data-dept="'+v[2]+'" data-lat="'+v[3]+'" data-lon="'+v[4]+'" data-cp="'+(v[5]||"")+'">'+esc(v[0])+(v[5]?" "+v[5]:"")+'</button>';
+    }).join("")+'</div>'+(S.ville?'<p class="muted">Sélection : <b>'+esc(S.ville)+'</b>'+(S.cp?" ("+esc(S.cp)+")":"")+(S.dept?' · dép. '+S.dept:'')+'</p>':'')+'</div>';
 }
 function quiz(){
   return '<button type="button" class="back" data-act="home">Retour</button><p class="muted">Étape 1 / 3</p><h1>Où se situe le problème ?</h1>'+
@@ -655,7 +658,56 @@ function apis(){
 
 function setVille(nom, code, dept, lat, lon){
   S.ville=nom; S.code=code||S.code; S.dept=dept||S.dept;
-  if (lat!=null) S.lat=+lat; if (lon!=null) S.lon=+lon;
+  if (lat!=null && lat!=="") S.lat=+lat;
+  if (lon!=null && lon!=="") S.lon=+lon;
+}
+function villeChoices(){
+  var seen={};
+  var list=[];
+  (S.extra||[]).concat(VILLES).forEach(function(v){
+    if (!v || seen[v[1]]) return;
+    seen[v[1]]=1;
+    list.push(v);
+  });
+  return list.slice(0,10);
+}
+function rememberVille(nom, code, dept, lat, lon, cp){
+  setVille(nom, code, dept, lat, lon);
+  S.cp = cp||"";
+  if (!code) return;
+  S.extra = (S.extra||[]).filter(function(v){ return v[1]!==code; });
+  S.extra.unshift([nom, code, dept, lat, lon, cp||""]);
+  S.extra = S.extra.slice(0,12);
+  localStorage.setItem("rs_villes", JSON.stringify(S.extra));
+}
+function paintSearch(){
+  var el=document.getElementById("modal");
+  if (!el) return;
+  if (!S.searchOpen) { el.className=""; el.innerHTML=""; return; }
+  var n=S.dots||1;
+  var dots=[1,2,3].map(function(i){ return '<i class="'+(i<=n?"on":"")+'"></i>'; }).join("");
+  var elapsed = S.searchT0 ? Math.max(0, Math.round((Date.now()-S.searchT0)/1000)) : 0;
+  el.className="on";
+  el.innerHTML='<div class="sheet"><h2 style="margin:0 0 8px">Recherche des spécialistes <span class="dots" id="sdots">'+dots+'</span></h2>'+
+    '<p><b>Moteur : pratique · '+VERSION+'</b></p>'+
+    '<p class="muted">Durée estimée : 20 à 90 secondes (annuaire, diplômes, publications).</p>'+
+    '<p class="muted" style="margin-bottom:0">VILLE</p><p><b>'+esc(S.ville||"—")+(S.cp?" ("+esc(S.cp)+")":"")+'</b></p>'+
+    '<p class="muted" style="margin-bottom:0">SPÉCIALITÉ</p><p><b>'+esc(SPEC[S.spec]||"")+'</b></p>'+
+    '<p>'+esc(S.searchPhase||"Préparation")+'</p>'+
+    '<p class="muted" id="selapsed">Dernière activité il y a '+elapsed+' s'+(S.searchCount?' · '+S.searchCount+' profils':'')+'</p>'+
+    '<div class="row"><button type="button" class="stop" data-act="search-stop">Arrêter</button><button type="button" class="go" data-act="search-see">Voir les résultats</button></div></div>';
+}
+function tickSearch(){
+  if (S.searchTimer) clearInterval(S.searchTimer);
+  S.dots=1;
+  S.searchTimer=setInterval(function(){
+    if (!S.searchOpen) { clearInterval(S.searchTimer); return; }
+    S.dots = (S.dots%3)+1;
+    var box=document.getElementById("sdots");
+    if (box) box.innerHTML=[1,2,3].map(function(i){ return '<i class="'+(i<=S.dots?"on":"")+'"></i>'; }).join("");
+    var e=document.getElementById("selapsed");
+    if (e && S.searchT0) e.textContent="Dernière activité il y a "+Math.max(0, Math.round((Date.now()-S.searchT0)/1000))+" s"+(S.searchCount?" · "+S.searchCount+" profils":"");
+  }, 1000);
 }
 
 function geocode(nom){
@@ -708,28 +760,39 @@ function mapHas(r){
 }
 
 function runSearch(){
-  if (!S.ville) { alert("Choisissez une ville."); return; }
+  if (!S.code || !S.ville) { alert("Choisissez une ville dans la liste (nom ou code postal)."); return; }
   if (!S.spec) S.spec="chir_gen";
-  S.busy=true; S.screen="results"; S.tab="search"; render();
-  var ready = S.code ? Promise.resolve() : geocode(S.ville);
-  ready.then(function(){
-    var sf = RPPS_SF[S.spec]||"Médecin";
-    var hs = HAS_SF[S.spec]||"";
-    var jobs = [];
-    if (S.code) {
-      var u1="https://tabular-api.data.gouv.fr/api/resources/"+RID_RPPS+"/data/?page_size=30&"+
-        encodeURIComponent("Code commune (coord. structure)")+"__exact="+encodeURIComponent(S.code)+"&"+
-        encodeURIComponent("Libellé savoir-faire")+"__contains="+encodeURIComponent(sf);
-      jobs.push(httpGet(u1).then(function(res){ return {kind:"rpps", res:res}; }));
-    }
-    if (S.dept && hs) {
-      var u2="https://tabular-api.data.gouv.fr/api/resources/"+RID_HAS+"/data/?page_size=30&"+
-        encodeURIComponent("Département")+"__exact="+encodeURIComponent(S.dept)+"&"+
-        encodeURIComponent("Spécialité")+"__contains="+encodeURIComponent(hs);
-      jobs.push(httpGet(u2).then(function(res){ return {kind:"has", res:res}; }));
-    }
-    return Promise.all(jobs);
-  }).then(function(parts){
+  S.searchAbort=false;
+  S.busy=true;
+  S.searchOpen=true;
+  S.searchT0=Date.now();
+  S.searchCount=0;
+  S.searchPhase="Commune confirmée · "+S.ville;
+  S.screen="results"; S.tab="search";
+  render();
+  paintSearch();
+  tickSearch();
+  var sf = RPPS_SF[S.spec]||"Médecin";
+  var hs = HAS_SF[S.spec]||"";
+  var jobs = [];
+  S.searchPhase="Annuaire RPPS · "+S.ville;
+  paintSearch();
+  if (S.code) {
+    var u1="https://tabular-api.data.gouv.fr/api/resources/"+RID_RPPS+"/data/?page_size=30&"+
+      encodeURIComponent("Code commune (coord. structure)")+"__exact="+encodeURIComponent(S.code)+"&"+
+      encodeURIComponent("Libellé savoir-faire")+"__contains="+encodeURIComponent(sf);
+    jobs.push(httpGet(u1).then(function(res){ return {kind:"rpps", res:res}; }));
+  }
+  if (S.dept && hs) {
+    S.searchPhase="Accréditations HAS · dép. "+S.dept;
+    paintSearch();
+    var u2="https://tabular-api.data.gouv.fr/api/resources/"+RID_HAS+"/data/?page_size=30&"+
+      encodeURIComponent("Département")+"__exact="+encodeURIComponent(S.dept)+"&"+
+      encodeURIComponent("Spécialité")+"__contains="+encodeURIComponent(hs);
+    jobs.push(httpGet(u2).then(function(res){ return {kind:"has", res:res}; }));
+  }
+  Promise.all(jobs).then(function(parts){
+    if (S.searchAbort) return;
     var by={};
     function add(p){
       if (!p.rpps) return;
@@ -760,24 +823,36 @@ function runSearch(){
     S.srcNote=(parts||[]).map(function(p){return p.kind.toUpperCase()+" "+((parseBody(p.res)||{}).meta||{}).total;}).join(" · ");
     if (!list.length) S.srcNote="aucune ligne pour cette commune / spécialité";
     S.results=list;
+    S.searchCount=list.length;
+    S.searchPhase=list.length+" profils · diplômes et savoir-faire";
+    paintSearch();
     S.lastSearch={label:(SPEC[S.spec]||"")+" · "+S.ville+" · "+S.rayon+" km", spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()};
     S.history.unshift({type:"RECHERCHE", label:S.lastSearch.label, spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()});
     persist();
     render();
-    S.srcNote=(S.srcNote?S.srcNote+" · ":"")+"chargement diplômes…";
-    render();
+    paintSearch();
     return mapAllQualifs(list).then(function(withQ){
+      if (S.searchAbort) return withQ;
       S.results=withQ;
+      S.searchPhase="Publications et environnement";
       S.srcNote=(S.srcNote||"").replace("chargement diplômes…","diplômes "+withQ.filter(function(p){return p.qualifsLoaded;}).length+"/"+withQ.length);
+      paintSearch();
       render();
       return enrichFhir(withQ);
     }).then(function(done){
+      if (S.searchAbort || !done) return;
       S.results=done;
+      S.searchCount=done.length;
+      S.searchPhase="Terminé · "+done.length+" profils";
       if (getFhirKey()) S.srcNote=(S.srcNote?S.srcNote+" · ":"")+"FHIR "+done.filter(function(p){return p.fhirOk;}).length+"/"+done.length;
-      S.busy=false; persist(); render();
+      S.busy=false; persist(); render(); paintSearch();
     });
   }).catch(function(e){
-    S.busy=false; S.srcNote="erreur "+(e&&e.message?e.message:e); render();
+    S.busy=false;
+    S.searchPhase="Erreur : "+(e&&e.message?e.message:e);
+    S.srcNote="erreur "+(e&&e.message?e.message:e);
+    paintSearch();
+    render();
   });
 }
 
@@ -828,7 +903,7 @@ function render(){
 function bindFields(){
   var v=document.getElementById("ville");
   if (v) {
-    v.addEventListener("input", function(){ S.ville=this.value; liveSuggest(this.value); });
+    v.addEventListener("input", function(){ S.ville=this.value; S.code=""; S.cp=""; liveSuggest(this.value); });
   }
   var s=document.getElementById("spec"); if (s) s.addEventListener("change", function(){ S.spec=this.value; });
   var r=document.getElementById("rayon"); if (r) r.addEventListener("change", function(){ S.rayon=+this.value; });
@@ -853,19 +928,26 @@ function bindFields(){
 }
 function liveSuggest(q){
   var box=document.getElementById("suggest"); if (!box) return;
-  var local=VILLES.filter(function(v){return fold(v[0]).indexOf(fold(q))>=0;}).slice(0,6);
-  if (!q) { box.style.display="none"; return; }
+  var digits=String(q||"").replace(/\s/g,"");
+  var isCp=/^\d{5}$/.test(digits);
+  if (!q || (/^\d+$/.test(digits) && digits.length<5)) { box.style.display="none"; return; }
+  var local=VILLES.filter(function(v){return !isCp && fold(v[0]).indexOf(fold(q))>=0;}).slice(0,6);
   box.style.display="block";
-  box.innerHTML=local.map(function(v){return '<div data-act="setville" data-nom="'+v[0]+'" data-code="'+v[1]+'" data-dept="'+v[2]+'" data-lat="'+v[3]+'" data-lon="'+v[4]+'">'+v[0]+' ('+v[2]+')</div>';}).join("");
-  if (q.length>=3) {
-    httpGet("https://geo.api.gouv.fr/communes?nom="+encodeURIComponent(q)+"&fields=nom,code,departement,centre&boost=population&limit=6").then(function(res){
+  box.innerHTML=local.map(function(v){return '<div data-act="setville" data-nom="'+v[0]+'" data-code="'+v[1]+'" data-dept="'+v[2]+'" data-lat="'+v[3]+'" data-lon="'+v[4]+'" data-cp="'+(v[5]||"")+'">'+v[0]+(v[5]?" ("+v[5]+")":" ("+v[2]+")")+'</div>';}).join("") || '<div class="muted">Recherche…</div>';
+  if (q.length>=3 || isCp) {
+    var url = isCp
+      ? "https://geo.api.gouv.fr/communes?codePostal="+digits+"&fields=nom,code,codesPostaux,departement,centre&limit=8"
+      : "https://geo.api.gouv.fr/communes?nom="+encodeURIComponent(q)+"&fields=nom,code,codesPostaux,departement,centre&boost=population&limit=6";
+    httpGet(url).then(function(res){
       var arr=parseBody(res); if (!arr||!arr.length||!document.getElementById("suggest")) return;
       document.getElementById("suggest").innerHTML=arr.map(function(c){
         var lat=c.centre&&c.centre.coordinates?c.centre.coordinates[1]:"";
         var lon=c.centre&&c.centre.coordinates?c.centre.coordinates[0]:"";
         var dep=c.departement?c.departement.code:"";
-        return '<div data-act="setville" data-nom="'+esc(c.nom)+'" data-code="'+c.code+'" data-dept="'+dep+'" data-lat="'+lat+'" data-lon="'+lon+'">'+esc(c.nom)+' ('+dep+')</div>';
+        var cp=(c.codesPostaux&& (isCp && c.codesPostaux.indexOf(digits)>=0 ? digits : c.codesPostaux[0]))||(isCp?digits:"");
+        return '<div data-act="setville" data-nom="'+esc(c.nom)+'" data-code="'+c.code+'" data-dept="'+dep+'" data-lat="'+lat+'" data-lon="'+lon+'" data-cp="'+esc(cp)+'"><b>'+esc(c.nom)+'</b> ('+esc(cp||dep)+')<br><span class="muted">Département '+esc(dep)+'</span></div>';
       }).join("");
+      document.getElementById("suggest").style.display="block";
     });
   }
 }
@@ -886,7 +968,7 @@ document.addEventListener("click", function(e){
   else if (act==="results") go("results","search");
   else if (act==="apis") go("apis","profil");
   else if (act==="profil") go("profil","profil");
-  else if (act==="setville") { setVille(el.getAttribute("data-nom"), el.getAttribute("data-code"), el.getAttribute("data-dept"), el.getAttribute("data-lat"), el.getAttribute("data-lon")); var box=document.getElementById("suggest"); if(box) box.style.display="none"; render(); }
+  else if (act==="setville") { rememberVille(el.getAttribute("data-nom"), el.getAttribute("data-code"), el.getAttribute("data-dept"), el.getAttribute("data-lat"), el.getAttribute("data-lon"), el.getAttribute("data-cp")); var box=document.getElementById("suggest"); if(box) box.style.display="none"; render(); }
   else if (act==="zone") { S.q.zone=el.getAttribute("data-id"); go("quiz2"); }
   else if (act==="type") { S.q.type=el.getAttribute("data-id"); go("quiz3"); }
   else if (act==="alerte") {
@@ -932,6 +1014,16 @@ document.addEventListener("click", function(e){
   else if (act==="openurl") {
     var u=el.getAttribute("data-url");
     if (window.Android && Android.openUrl) Android.openUrl(u); else window.open(u,"_blank");
+  }
+  else if (act==="search-stop") {
+    S.searchAbort=true; S.busy=false; S.searchOpen=false; S.searchPhase="Arrêtée";
+    if (S.searchTimer) clearInterval(S.searchTimer);
+    paintSearch(); render();
+  }
+  else if (act==="search-see") {
+    S.searchOpen=false;
+    S.screen="results"; S.tab="search";
+    paintSearch(); render();
   }
   else if (act==="back") { window.goBack(); }
   else if (act==="refresh") {
