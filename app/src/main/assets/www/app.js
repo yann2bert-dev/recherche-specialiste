@@ -7,7 +7,7 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.5.1";
+var VERSION = "1.5.2";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -258,6 +258,38 @@ function enrichOne(p){
     return p;
   });
 }
+function qualifBoost(p){
+  var text = fold([].concat(p.diplomes||[], p.savoirFaire||[], p.autorisations||[], [p.sous]).join(" | "));
+  var pts = 0;
+  var reasons = [];
+  function add(n, label, cond){ if (cond) { pts += n; reasons.push(label+" +"+n); } }
+  add(18, "DES/DESC", text.indexOf("des ")>=0 || text.indexOf("desc")>=0 || text.indexOf("etudes specialisees")>=0);
+  add(10, "Capacité", text.indexOf("capacite")>=0);
+  add(8, "Diplôme d'État", text.indexOf("diplome d'etat")>=0 || text.indexOf("diplome d etat")>=0 || text.indexOf("d.e.")>=0);
+  add(8, "Doctorat", text.indexOf("doctorat")>=0 || text.indexOf("these")>=0);
+  add(6, "DU/DIU", text.indexOf("diplome universitaire")>=0 || /\bdu\b/.test(text) || text.indexOf("diu")>=0);
+  add(16, "Spécialité ordinale", text.indexOf("specialite ordinale")>=0);
+  add(12, "Compétence exclusive", text.indexOf("competence exclusive")>=0);
+  add(8, "Qualification", text.indexOf("qualification")>=0);
+  var nDip = (p.rawDipl&&p.rawDipl.length) || (p.diplomes&&p.diplomes.length) || 0;
+  var nSf = (p.rawSf&&p.rawSf.length) || (p.savoirFaire&&p.savoirFaire.length) || 0;
+  if (nDip>1) { pts += Math.min(12, (nDip-1)*3); reasons.push((nDip)+" diplômes"); }
+  if (nSf>1) { pts += Math.min(10, (nSf-1)*2); reasons.push((nSf)+" savoir-faire"); }
+  var wanted = fold(RPPS_SF[S.spec]||SPEC[S.spec]||"");
+  var matchSpec = wanted && text.indexOf(wanted)>=0;
+  if (!matchSpec && wanted) matchSpec = wanted.split(" ").some(function(w){ return w.length>4 && text.indexOf(w)>=0; });
+  if (matchSpec) { pts += 14; reasons.push("aligné demande"); }
+  if (p.autorisations && p.autorisations.length) { pts += 6; reasons.push("autorisation d'exercice"); }
+  return {pts:Math.min(46, pts), reasons:reasons, matchSpec:!!matchSpec, nDip:nDip, nSf:nSf};
+}
+function mapAllQualifs(list){
+  var i=0, max=Math.min(list.length, 18);
+  function step(){
+    if (i>=max) return Promise.resolve(list);
+    return enrichQualifs(list[i]).then(function(){ list[i].sc=scoreOf(list[i]); i++; return step(); });
+  }
+  return step();
+}
 function enrichFhir(list){
   if (!getFhirKey()) return Promise.resolve(list);
   var i=0;
@@ -294,7 +326,9 @@ function scoreOf(p){
     else if (hy>=2018) comp += 6;
   }
   if (p.oa) comp += 4;
-  if (p.diplomes && p.diplomes.length) comp += Math.min(16, p.diplomes.length*4);
+  var qb = qualifBoost(p);
+  comp += qb.pts;
+  if (qb.matchSpec) fit = Math.max(fit, 88);
   if (cat.indexOf("etud")>=0 || cat.indexOf("interne")>=0) comp = Math.min(comp, 22);
   comp = Math.max(0, Math.min(100, comp));
 
@@ -336,6 +370,7 @@ function scoreOf(p){
   var data = Math.round(100*filled/fields.length);
   if (p.fhirOk) data = Math.min(100, data+10);
   if (p.rawHas) data = Math.min(100, data+6);
+  if (p.qualifsLoaded) data = Math.min(100, data+8);
 
   var w=S.poids, sum=(w.F+w.E+w.P+w.A)||1;
   var qualite = Math.round((w.F/sum)*comp + (w.E/sum)*exp + (w.A/sum)*signaux + (w.P/sum)*prox);
@@ -343,7 +378,7 @@ function scoreOf(p){
 
   var why = {
     besoin: "Pertinence "+besoin+"/100 = 62 % adéquation à la demande ("+fit+"/100, « "+(p.sous||"—")+" » vs « "+(SPEC[S.spec]||"")+" ») + 38 % qualité.",
-    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)) + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
+    fiab: "Qualité "+qualite+"/100 = compétences "+comp+" (titre "+(p.titre||"—")+(p.hasDate?" · HAS "+p.hasDate:" · sans HAS")+(qb.reasons.length?" · "+qb.reasons.join(", "):"")+") + expérience "+exp+(years!=null?" (~"+years+" ans)":" · année diplôme non publiée")+" + signaux "+signaux+" ("+(p.sites||1)+" lieu(x)) + proximité "+prox+". Poids exp "+w.E+"% · compétences "+w.F+"% · signaux "+w.A+"% · proximité "+w.P+"%.",
     data: "Fiabilité des données "+data+"/100 : "+filled+"/"+fields.length+" champs publics. Ce score ne juge pas le chirurgien, seulement la richesse des sources."
   };
   return {besoin:besoin, fiab:qualite, data:data, qualite:qualite, fit:fit, comp:comp, exp:exp, signaux:signaux, prox:prox, dist:p._dist!=null?p._dist:(deptOnly?null:(p.communeExact?2:null)), why:why, years:years};
@@ -664,7 +699,14 @@ function runSearch(){
     S.history.unshift({type:"RECHERCHE", label:S.lastSearch.label, spec:S.spec, ville:S.ville, code:S.code, dept:S.dept, lat:S.lat, lon:S.lon, rayon:S.rayon, at:Date.now()});
     persist();
     render();
-    return enrichFhir(list).then(function(done){
+    S.srcNote=(S.srcNote?S.srcNote+" · ":"")+"chargement diplômes…";
+    render();
+    return mapAllQualifs(list).then(function(withQ){
+      S.results=withQ;
+      S.srcNote=(S.srcNote||"").replace("chargement diplômes…","diplômes "+withQ.filter(function(p){return p.qualifsLoaded;}).length+"/"+withQ.length);
+      render();
+      return enrichFhir(withQ);
+    }).then(function(done){
       S.results=done;
       if (getFhirKey()) S.srcNote=(S.srcNote?S.srcNote+" · ":"")+"FHIR "+done.filter(function(p){return p.fhirOk;}).length+"/"+done.length;
       S.busy=false; persist(); render();
