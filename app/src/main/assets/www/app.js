@@ -4,13 +4,14 @@ window.S = {
   sort:"qualite", filtres:{has:false, tel:false, liberal:false, hopital:false},
   q:{zone:"",type:"",duree:"jours",alertes:[],texte:""},
   suggestions:[], spec:"chir_gen", results:[], current:null, detailTab:"synthese",
-  history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
+  history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:"", avis:{}
 };
 var S = window.S;
-var VERSION = "1.5.4";
+var VERSION = "1.6.0";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
+try { S.avis = JSON.parse(localStorage.getItem("rs_avis")||"{}"); } catch(e) {}
 try { var pw=JSON.parse(localStorage.getItem("rs_poids")||"null"); if(pw&&pw.F!=null) S.poids=pw; } catch(e) {}
 
 var SPEC = {
@@ -90,13 +91,19 @@ function persist(){
   localStorage.setItem("rs_hist", JSON.stringify(S.history.slice(0,50)));
   localStorage.setItem("rs_pins", JSON.stringify(S.pins.slice(0,2)));
   localStorage.setItem("rs_poids", JSON.stringify(S.poids));
+  localStorage.setItem("rs_avis", JSON.stringify(S.avis||{}));
   if (S.lastSearch) localStorage.setItem("rs_last", JSON.stringify(S.lastSearch));
 }
 function cls(n){ return n>=75?"ok":n>=55?"warn":"bad"; }
 function lecture(n){ return n>=75?"lecture favorable":n>=55?"lecture prudente":"vigilance"; }
 function avg(a){ var x=a.filter(function(v){return v!=null;}); return x.length?x.reduce(function(p,c){return p+c;},0)/x.length:5; }
-function logo(){
-  return '<div class="topbar"><img src="logo.png" alt="logo"/><div class="brand"><b>BY Innovation</b><span>Recherche de Spécialistes</span></div><div class="ver">v'+VERSION+'</div></div>';
+function logo(){ return ""; }
+function headerHtml(){
+  var titles={home:"Accueil",quiz:"Symptôme",quiz2:"Symptôme",quiz3:"Alerte",orient:"Orientation",searchform:"Recherche",results:"Résultats",fiche:"Fiche",synth:"Synthèse",hist:"Historique",profil:"Profil",apis:"Sources & API"};
+  var showBack = S.screen!=="home";
+  return (showBack?'<button type="button" class="headback" data-act="back">‹</button>':'<span class="headback spacer"></span>')+
+    '<div class="headtitle"><span class="hbadge">S</span><b>'+esc(titles[S.screen]||"Recherche")+'</b></div>'+
+    '<div class="headbrand"><img src="logo.png" alt="logo"/><div><b>Spécialistes</b><span>v'+VERSION+'</span></div></div>';
 }
 function sliders(){
   return '<div class="card"><b>Classer selon ce qui compte pour vous</b><p class="muted">Ces curseurs changent l’ordre, pas un avis médical.</p>'+
@@ -584,10 +591,21 @@ function ficheV(){
       sourceBox("HAL / PubMed", [["HAL",p.halN],["Communications HAL",p.commN],["PubMed",p.pmN],["Incertain homonyme",p.impactUncertain?"oui":"non"]], p.impactLoaded?"":"Pas encore interrogé.")+
       sourceBox("FHIR v2 — gateway.api.esante.gouv.fr", p.fhirRaw, p.fhirNote||(getFhirKey()?"":"Collez la clé ANS pour interroger Practitioner + PractitionerRole."));
   }
-  return '<button type="button" class="back" data-act="results">Retour</button><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="muted">'+esc(p.sous||"")+' · '+esc(p.ville||"")+' · v'+VERSION+'</p>'+
+  var av = S.avis[p.rpps||p.id] || "neutre";
+  var chips = [];
+  if (p.rpps) chips.push("RPPS");
+  if (p.hasDate) chips.push("HAS");
+  if (p.fhirOk) chips.push("FHIR");
+  if (p.qualifsLoaded) chips.push("Diplômes");
+  if (p.impactLoaded) chips.push("HAL/PubMed");
+  return '<div class="ident"><div class="avatar">'+esc((p.prenom||"?").charAt(0))+'</div><div class="identtxt"><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="spec">'+esc(p.sous||SPEC[p.spec]||"")+'</p><p class="muted">RPPS '+esc(p.rpps||"—")+(p.finess?" · FINESS "+esc(p.finess):"")+'</p><p class="muted">'+esc(p.adresse||p.ville||"")+'</p></div></div>'+
+    '<div class="chips">'+chips.map(function(c){return '<span class="chip on">'+c+'</span>';}).join("")+'</div>'+
+    '<p class="muted"><b>Mon avis :</b> '+(av==="ok"?"favorable":av==="ko"?"défavorable":"non tranché")+' · À titre indicatif, données publiques seulement.</p>'+
+    '<button type="button" class="btn primary" data-act="refresh">Rafraîchir les données</button>'+
     '<div class="tabs">'+tabs.map(function(t){return '<a href="#" class="'+(S.detailTab===t[0]?"on":"")+'" data-act="dtab" data-id="'+t[0]+'">'+t[1]+'</a>';}).join("")+'</div>'+body+
-    '<div class="actions"><button type="button" class="btn ghost" data-act="call">Appeler</button><button type="button" class="btn ghost" data-act="mail">E-mail</button><button type="button" class="btn primary" data-act="maps">Itinéraire</button><button type="button" class="btn ghost" data-act="share">Partager</button></div>'+
-    '<p class="disclaimer">Cette application aide à s’orienter. Elle ne pose aucun diagnostic. Urgence : 15 · 18 · 17 · 112 · SMS 114.</p>';
+    '<div class="card"><b>Commentaire / décision</b><div class="chips"><button type="button" class="chip '+(av==="ok"?"on":"")+'" data-act="avis" data-id="ok">Valider</button><button type="button" class="chip '+(av==="ko"?"on":"")+'" data-act="avis" data-id="ko">Écarter</button><button type="button" class="chip '+(av==="neutre"?"on":"")+'" data-act="avis" data-id="neutre">Neutre</button></div></div>'+
+    '<div class="actbar"><button type="button" data-act="call">Appeler</button><button type="button" data-act="mail">E-mail</button><button type="button" class="on" data-act="maps">Itinéraire</button><button type="button" data-act="web">Annuaire</button></div>'+
+    '<p class="disclaimer">Pas un avis médical ni un palmarès clinique. Urgence : 15 · 18 · 17 · 112 · SMS 114.</p>';
 }
 function synth(){
   if (!S.lastSearch) return '<div class="card"><h2>Pas encore de synthèse</h2><button type="button" class="btn primary" data-act="home">Accueil</button></div>';
@@ -798,10 +816,12 @@ function navHtml(){
 function render(){
   var map={home:home,quiz:quiz,quiz2:quiz2,quiz3:quiz3,orient:orientV,searchform:searchForm,results:resultsV,fiche:ficheV,synth:synth,hist:hist,profil:profil,apis:apis};
   try {
+    var head=document.getElementById("head");
+    if (head) head.innerHTML=headerHtml();
     document.getElementById("app").innerHTML=(map[S.screen]||home)();
     document.getElementById("nav").innerHTML=navHtml();
   } catch(e) {
-    document.getElementById("app").innerHTML=logo()+'<div class="alert">Erreur : '+esc(e.message)+'</div><button type="button" class="btn primary" data-act="home">Accueil</button>';
+    document.getElementById("app").innerHTML='<div class="alert">Erreur : '+esc(e.message)+'</div><button type="button" class="btn primary" data-act="home">Accueil</button>';
   }
   bindFields();
 }
@@ -912,6 +932,26 @@ document.addEventListener("click", function(e){
   else if (act==="openurl") {
     var u=el.getAttribute("data-url");
     if (window.Android && Android.openUrl) Android.openUrl(u); else window.open(u,"_blank");
+  }
+  else if (act==="back") { window.goBack(); }
+  else if (act==="refresh") {
+    if (!S.current) return;
+    S.current.qualifsLoaded=false; S.current.impactLoaded=false; S.current.fhirRaw=[];
+    var cur=S.current;
+    enrichQualifs(cur).then(function(){ return enrichImpact(cur); }).then(function(){
+      if (getFhirKey()) return enrichOne(cur);
+    }).then(function(){ if (S.current===cur) { S.current.sc=scoreOf(S.current); render(); } });
+  }
+  else if (act==="web") {
+    var q=(S.current&&((S.current.titre||"")+" "+(S.current.prenom||"")+" "+(S.current.nom||"")+" "+(S.current.ville||"")))||"";
+    var u="https://www.annuaire.sante.fr/";
+    if (window.Android && Android.openUrl) Android.openUrl(u); else window.open(u,"_blank");
+  }
+  else if (act==="avis") {
+    if (!S.current) return;
+    var k=S.current.rpps||S.current.id;
+    S.avis[k]=el.getAttribute("data-id");
+    persist(); render();
   }
   else if (act==="wipe") { S.history=[]; persist(); render(); }
   else if (act==="test") testApi(el.getAttribute("data-id"), el.getAttribute("data-url"));
