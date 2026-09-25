@@ -7,7 +7,7 @@ window.S = {
   history:[], pins:[], lastSearch:null, apiTests:{}, busy:false, srcNote:""
 };
 var S = window.S;
-var VERSION = "1.5.0";
+var VERSION = "1.5.1";
 try { S.history = JSON.parse(localStorage.getItem("rs_hist")||"[]"); } catch(e) {}
 try { S.pins = JSON.parse(localStorage.getItem("rs_pins")||"[]"); } catch(e) {}
 try { S.lastSearch = JSON.parse(localStorage.getItem("rs_last")||"null"); } catch(e) {}
@@ -74,6 +74,8 @@ var ORIENT = {
 };
 var RID_RPPS = "fffda7e9-0ea2-4c35-bba0-4496f3af935d";
 var RID_HAS = "53974cda-7ea5-4716-b82b-56a9138a0a8c";
+var RID_DIPL = "41ae70ac-90c8-4c4e-8644-4ef1b100f045";
+var RID_SF = "fb55f15f-bd61-4402-b551-51ef387f2fab";
 
 function fold(s){ return String(s||"").toLowerCase().replace(/[àáâä]/g,"a").replace(/[èéêë]/g,"e").replace(/[ìíîï]/g,"i").replace(/[òóôö]/g,"o").replace(/[ùúûü]/g,"u").replace(/ç/g,"c"); }
 function esc(s){
@@ -134,7 +136,51 @@ function parseBody(res){
   try { return JSON.parse(res.body); } catch(e) { return null; }
 }
 
-function getFhirKey(){ return (localStorage.getItem("fhirKey")||"").trim(); }
+function tabularByRpps(rid, rpps){
+  var col=encodeURIComponent("Identifiant PP");
+  var url="https://tabular-api.data.gouv.fr/api/resources/"+rid+"/data/?page_size=30&"+col+"__exact="+encodeURIComponent(String(rpps));
+  return httpGet(url).then(function(res){
+    var js=parseBody(res);
+    return (js && js.data) ? js.data : [];
+  });
+}
+function uniqPush(arr, v){
+  if (!v) return;
+  var s=String(v).replace(/\s+/g," ").trim();
+  if (!s) return;
+  if (arr.indexOf(s)<0) arr.push(s);
+}
+function enrichQualifs(p){
+  if (!p || !p.rpps) return Promise.resolve(p);
+  if (p.qualifsLoaded) return Promise.resolve(p);
+  p.qualifsNote="Chargement diplômes et savoir-faire…";
+  return Promise.all([
+    tabularByRpps(RID_DIPL, p.rpps),
+    tabularByRpps(RID_SF, p.rpps)
+  ]).then(function(pair){
+    p.rawDipl=pair[0]||[];
+    p.rawSf=pair[1]||[];
+    p.diplomes=p.diplomes||[];
+    p.autorisations=p.autorisations||[];
+    p.savoirFaire=p.savoirFaire||[];
+    p.rawDipl.forEach(function(r){
+      uniqPush(p.diplomes, (r["Libellé type diplôme obtenu"]||"")+" — "+(r["Libellé diplôme obtenu"]||""));
+      if (r["Libellé type autorisation"] || r["Libellé discipline autorisation"]) {
+        uniqPush(p.autorisations, (r["Libellé type autorisation"]||"")+" "+(r["Libellé discipline autorisation"]||""));
+      }
+    });
+    p.rawSf.forEach(function(r){
+      uniqPush(p.savoirFaire, (r["Libellé type savoir-faire"]||"")+" — "+(r["Libellé savoir-faire"]||""));
+    });
+    p.qualifsLoaded=true;
+    p.qualifsNote=p.rawDipl.length+" diplôme(s) · "+p.rawSf.length+" savoir-faire · date d’obtention non publiée dans l’open data";
+    p.sc=scoreOf(p);
+    return p;
+  }).catch(function(e){
+    p.qualifsNote="Échec chargement diplômes : "+(e&&e.message?e.message:e);
+    return p;
+  });
+}
 function fhirGet(path){
   return httpGet("https://gateway.api.esante.gouv.fr/fhir/v2/"+path, "ESANTE-API-KEY:"+getFhirKey());
 }
@@ -425,6 +471,11 @@ function ficheV(){
       '<div class="score '+cls(s.fiab)+'"><b>'+s.fiab+'/100 ✓</b><span>Qualité (compétence + expérience) · '+lecture(s.fiab)+'</span></div>'+
       '<div class="score '+cls(s.data)+'"><b>'+s.data+'/100</b><span>Fiabilité des données seules</span></div></div>'+
       whyBox(s)+
+      '<div class="card"><b>Formation et compétences publiées</b>'+
+        (p.diplomes&&p.diplomes.length?'<p>'+p.diplomes.map(esc).join("<br>")+'</p>':'<p class="muted">Diplômes : chargement ou non encore publiés pour ce RPPS.</p>')+
+        (p.savoirFaire&&p.savoirFaire.length?'<p>'+p.savoirFaire.map(esc).join("<br>")+'</p>':'')+
+        (p.hasDate?'<p>Certification HAS : '+esc(p.hasDate)+(p.oa?" · "+p.oa:"")+'</p>':'<p class="muted">Pas d’accréditation HAS listée.</p>')+
+        '<p class="muted">'+(p.qualifsNote||"Les dates d’obtention de diplôme ne sont pas dans l’extraction publique.")+'</p></div>'+
       '<div class="row"><div class="metric"><b>'+esc(p.sous||SPEC[p.spec]||"—")+'</b><span class="muted">Savoir-faire</span></div><div class="metric"><b>'+esc(p.mode||"—")+'</b><span class="muted">Mode d’exercice</span></div></div>'+
       '<div class="row" style="margin-top:8px"><div class="card"><b class="fav">Points favorables</b>'+
         (p.hasDate?'<div class="fav">✓ Accréditation HAS '+esc(p.hasDate)+'</div>':'')+
@@ -440,13 +491,16 @@ function ficheV(){
   } else if (S.detailTab==="fiab") {
     var rows=[["Diplômes / formation",p.noteDip],["Certification HAS",p.noteCert],["Avis patients (signal faible)",p.noteAvis],["Rôle / exercice",p.noteReco],["Complétude des sources",Math.round(s.data/10)]];
     body = rows.map(function(r){return '<div class="card"><div class="row"><b>'+r[0]+'</b><span>'+r[1]+'/10</span></div><div class="bar"><i style="width:'+(r[1]*10)+'%"></i></div></div>';}).join("");
-    if (p.diplomes && p.diplomes.length) body += '<div class="card"><b>Qualifications FHIR</b><p>'+p.diplomes.map(esc).join("<br>")+'</p></div>';
+    if (p.diplomes && p.diplomes.length) body += '<div class="card"><b>Qualifications / diplômes officiels</b><p>'+p.diplomes.map(esc).join("<br>")+'</p><p class="muted">'+(p.qualifsNote||"")+'</p></div>';
+    if (p.savoirFaire && p.savoirFaire.length) body += '<div class="card"><b>Savoir-faire RPPS</b><p>'+p.savoirFaire.map(esc).join("<br>")+'</p></div>';
+    if (p.autorisations && p.autorisations.length) body += '<div class="card"><b>Autorisations d’exercice</b><p>'+p.autorisations.map(esc).join("<br>")+'</p></div>';
   } else if (S.detailTab==="acces") {
     body = '<div class="card"><p><b>Téléphone</b> '+esc(p.tel||"non publié")+'</p><p><b>E-mail</b> '+esc(p.email||"non publié")+'</p><p><b>Adresse</b> '+esc(p.adresse||p.ville||"—")+'</p><p><b>Structure</b> '+esc(p.structure||"—")+'</p></div>';
   } else {
     body = sourceBox("Géo — geo.api.gouv.fr", [["Ville",S.ville],["Code commune",S.code],["Département",S.dept],["Latitude",S.lat],["Longitude",S.lon]])+
       sourceBox("RPPS — tabular-api.data.gouv.fr", flattenObj(p.rawRpps), p.rawRpps?"":"Pas de ligne RPPS pour ce praticien.")+
-      sourceBox("HAS — médecins accrédités", flattenObj(p.rawHas), p.rawHas?"":"Pas d’accréditation HAS listée pour ce RPPS.")+
+      sourceBox("Diplômes RPPS — PS_LibreAcces_Dipl_AutExerc", p.rawDipl && p.rawDipl.length ? flattenObj(p.rawDipl) : [], p.qualifsNote||"Pas encore chargé.")+
+      sourceBox("Savoir-faire RPPS — PS_LibreAcces_SavoirFaire", p.rawSf && p.rawSf.length ? flattenObj(p.rawSf) : [], "")+
       sourceBox("FHIR v2 — gateway.api.esante.gouv.fr", p.fhirRaw, p.fhirNote||(getFhirKey()?"":"Collez la clé ANS pour interroger Practitioner + PractitionerRole."));
   }
   return '<button type="button" class="back" data-act="results">Retour</button><h1>'+esc(p.titre+" "+p.prenom+" "+p.nom)+'</h1><p class="muted">'+esc(p.sous||"")+' · '+esc(p.ville||"")+' · v'+VERSION+'</p>'+
@@ -474,6 +528,8 @@ function apis(){
     ["geo","Géocodage geo.api.gouv.fr","Ville → code commune INSEE. Gratuit, sans clé.","https://geo.api.gouv.fr/communes?nom=Aix-en-Provence&fields=nom,code,departement,centre&limit=1"],
     ["rpps","RPPS tabulaire data.gouv.fr","Identité, spécialité, commune, téléphone public.","https://tabular-api.data.gouv.fr/api/resources/"+RID_RPPS+"/data/?page_size=1"],
     ["has","HAS médecins accrédités","Accréditation officielle, spécialité, département.","https://tabular-api.data.gouv.fr/api/resources/"+RID_HAS+"/data/?page_size=1"],
+    ["dipl","Diplômes RPPS (Dipl_AutExerc)","Type et libellé des diplômes / autorisations. Pas de date d’obtention dans le fichier public.","https://tabular-api.data.gouv.fr/api/resources/"+RID_DIPL+"/data/?page_size=1"],
+    ["savoir","Savoir-faire RPPS","Spécialités ordinales et compétences reconnues.","https://tabular-api.data.gouv.fr/api/resources/"+RID_SF+"/data/?page_size=1"],
     ["datagouv","Métadonnées Annuaire Santé","Jeu RPPS publié chaque jour.","https://www.data.gouv.fr/api/1/datasets/annuaire-sante-extractions-des-donnees-en-libre-acces-des-professionnels-intervenant-dans-le-systeme-de-sante-rpps/"],
     ["fhir","API FHIR Annuaire Santé ANS","L’ANS impose une clé Gravitee. Sans clé le serveur répond 403 : ce n’est pas un bug de l’app. Créez une clé sur portal.api.esante.gouv.fr puis collez-la ici.","https://gateway.api.esante.gouv.fr/fhir/v2/metadata"]
   ];
@@ -625,6 +681,10 @@ function openFiche(id){
   S.detailTab="synthese";
   S.history.unshift({type:"FICHE", label:S.current.titre+" "+S.current.prenom+" "+S.current.nom, at:Date.now()});
   persist(); go("fiche", S.tab);
+  var cur=S.current;
+  enrichQualifs(cur).then(function(){
+    if (S.current===cur) { S.current.sc=scoreOf(S.current); render(); }
+  });
 }
 
 function testApi(id, url){
