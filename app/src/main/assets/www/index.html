@@ -67,5 +67,15 @@ label{font-size:12px;font-weight:700;color:var(--muted)}
 </div>
 <nav class="nav" id="nav"></nav>
 <script src="app.js"></script>
+<script>
+setTimeout(function(){
+  if (window.S && document.querySelector(".nav button")) return;
+  var box = document.getElementById("app");
+  if (!box) return;
+  box.innerHTML = '<div class="topbar"><img src="logo.png" alt="logo"/><div><b>BY Innovation</b><span>Recherche de Spécialistes</span></div></div>' +
+    '<div class="alert">L’interface n’a pas démarré. Désinstallez l’ancienne version, puis installez le nouvel APK.</div>' +
+    '<button class="btn primary" onclick="location.reload()">Réessayer</button>';
+}, 400);
+</script>
 </body>
 </html>

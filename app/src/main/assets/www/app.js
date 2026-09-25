@@ -72,7 +72,14 @@ var RID_RPPS = "fffda7e9-0ea2-4c35-bba0-4496f3af935d";
 var RID_HAS = "53974cda-7ea5-4716-b82b-56a9138a0a8c";
 
 function fold(s){ return String(s||"").toLowerCase().replace(/[àáâä]/g,"a").replace(/[èéêë]/g,"e").replace(/[ìíîï]/g,"i").replace(/[òóôö]/g,"o").replace(/[ùúûü]/g,"u").replace(/ç/g,"c"); }
-function esc(s){ return String(s||"").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">").replace(/"/g,"""); }
+function esc(s){
+  var t = String(s == null ? "" : s);
+  t = t.split("&").join("&#38;");
+  t = t.split("<").join("&#60;");
+  t = t.split(">").join("&#62;");
+  t = t.split('"').join("&#34;");
+  return t;
+}
 function persist(){ localStorage.setItem("rs_hist", JSON.stringify(S.history.slice(0,50))); localStorage.setItem("rs_pins", JSON.stringify(S.pins.slice(0,2))); }
 function cls(n){ return n>=75?"ok":n>=55?"warn":"bad"; }
 function lecture(n){ return n>=75?"lecture favorable":n>=55?"lecture prudente":"vigilance"; }
